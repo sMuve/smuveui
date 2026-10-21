@@ -330,6 +330,13 @@ function M:ApplyTotPosition()
     if not frame then
         return
     end
+    -- A target change during combat taints this C_Timer.After callback, and SetPoint/
+    -- ClearAllPoints on the target-of-target frame become protected under that taint - deferred
+    -- to PLAYER_REGEN_ENABLED the same way Modules\Nameplates.lua defers ApplyWidth.
+    if InCombatLockdown() then
+        self.totPending = true
+        return
+    end
     if not totOriginal then
         if frame:GetNumPoints() == 0 then
             return
@@ -345,6 +352,7 @@ function M:ApplyTotPosition()
             end
         end)
     end
+    self.totPending = false
     totPositioning = true
     frame:ClearAllPoints()
     frame:SetPoint(totOriginal.point, totOriginal.relativeTo, totOriginal.relativePoint,
@@ -410,6 +418,11 @@ function M:Init()
     S:On("UNIT_TARGET", function(_, unit)
         if unit == "target" or unit == "focus" then
             UpdateSoon()
+        end
+    end)
+    S:On("PLAYER_REGEN_ENABLED", function()
+        if M.totPending then
+            M:ApplyTotPosition()
         end
     end)
 

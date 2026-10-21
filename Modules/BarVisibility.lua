@@ -19,6 +19,8 @@ M.BARS = {
     { key = "stance", label = "Stance Bar", frames = { "StanceBar" }, buttons = "StanceButton" },
     { key = "micro", label = "Menu Bar", frames = { "MicroMenuContainer", "MicroMenu" } },
     { key = "bags", label = "Bag Bar", frames = { "BagsBar" } },
+    { key = "xp", label = "Experience Bar", frames = { "StatusTrackingBarManager.MainStatusTrackingBarContainer" } },
+    { key = "reputation", label = "Reputation Bar", frames = { "StatusTrackingBarManager.SecondaryStatusTrackingBarContainer" } },
 }
 
 M.MODES = {
@@ -31,8 +33,9 @@ local FADE_SPEED = 6 -- alpha per second
 
 local function FrameOf(bar)
     for _, name in ipairs(bar.frames) do
-        if _G[name] then
-            return _G[name]
+        local frame = S.Resolve(name)
+        if frame then
+            return frame
         end
     end
 end

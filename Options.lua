@@ -324,6 +324,14 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
         Note(left, "BetterGroupLoot is loaded and replaces the roll frames, so the tracker is inactive.")
     end
 
+    Header(left, "Vendors")
+    Checkbox(left, "Auto sell junk",
+        "Sells every poor-quality (gray) item in your bags the moment a vendor window opens, instead of needing the vendor's own sell-junk button.",
+        Setting("qol", "autoSellJunk"))
+    Checkbox(left, "Auto repair all gear",
+        "Repairs all your equipped gear the moment a vendor that offers repairs opens, using guild bank funds first if you're authorized to withdraw enough to cover it.",
+        Setting("qol", "autoRepair"))
+
     Header(left, "Quests")
     Checkbox(left, "Hide objective tracker with a quest guide",
         "Completely hides the default objective tracker while RestedXP, Journey or Polestar is loaded. Without one of them the tracker stays.",
@@ -383,8 +391,8 @@ CATEGORIES[3] = { key = "actionbars", title = "Action Bars", build = function(la
         "Colors the whole button icon: red when out of range, blue when you lack the mana, gray when unusable.",
         Setting("actionbars", "rangeIndicator", "ActionBars"))
 
-    Header(layout, "Experience Bar")
-    Slider(layout, "Scale", "Scale of the experience / reputation bar above the action bars (1 = normal size).",
+    Header(layout, "Experience & Reputation Bar")
+    Slider(layout, "Scale", "Scale of the experience and reputation bars above the action bars (1 = normal size).",
         0.5, 2, 0.05, Setting("actionbars", "xpScale", "StatusBars"))
 
     Header(layout, "Visibility")
@@ -482,6 +490,13 @@ CATEGORIES[5] = { key = "player", title = "Player", indent = true, build = funct
     Header(layout, "Auras")
     Slider(layout, "Aura duration size", "Text size of the remaining time and the stack count (top right) on your buffs and debuffs.",
         6, 20, 1, Setting("appearance", "auraDurationSize", "Auras"))
+    Checkbox(layout, "Unlock buffs bar",
+        "Edit Mode doesn't offer this (it's drawn independently of the client's own BuffFrame/DebuffFrame), so it's moved by dragging it directly while this is checked. The debuffs bar always stays anchored below it. Always off after a reload.",
+        Setting("appearance", "auraBarsUnlocked", "Auras"))
+    Slider(layout, "Buffs scale", "Size of your buff icons.", 0.5, 2, 0.05, Setting("appearance", "auraBuffsScale", "Auras"))
+    Slider(layout, "Debuffs scale", "Size of your debuff icons.", 0.5, 2, 0.05, Setting("appearance", "auraDebuffsScale", "Auras"))
+    Slider(layout, "Buffs per row", "How many buff icons before a new row starts. The debuffs bar below always follows.", 1, 20, 1, Setting("appearance", "auraBuffsPerRow", "Auras"))
+    Slider(layout, "Debuffs per row", "How many debuff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraDebuffsPerRow", "Auras"))
 end }
 
 CATEGORIES[6] = { key = "target", title = "Target", indent = true, build = function(layout)
@@ -509,6 +524,10 @@ CATEGORIES[10] = { key = "nameplates", title = "Nameplates", build = function(la
     local function NP(key)
         return Setting("nameplates", key, "Nameplates")
     end
+    Header(layout, "Friendly Nameplates")
+    Checkbox(layout, "Name only mode", "Hides the health bar, cast bar and buffs/debuffs on friendly nameplates, leaving just the name.", NP("friendlyNameOnly"))
+    Checkbox(layout, "Class colored", "Friendly nameplate names are shown in their class color (players only).", NP("friendlyClassColor"))
+
     Header(layout, "Enemy Nameplates")
     if not S.modules.Nameplates:IsSupported() then
         Note(layout, "This client doesn't offer the aura containers these nameplates need, so they are inactive.")
@@ -612,7 +631,7 @@ local MODULE_NAMES = {
     Tooltip = { "Tooltip", "Dark tooltips and class colored names." },
     Auras = { "Player auras", "Your buffs and debuffs: black borders, duration and stacks inside the icon." },
     UnitFrames = { "Unit frames", "Class and reaction colored health bars, class colored names, your own name and the target's mana values." },
-    StatusBars = { "Experience bar", "The experience bar's scale." },
+    StatusBars = { "Experience bar", "The experience and reputation bars' scale." },
     BarVisibility = { "Bar visibility", "Action bars, menu bar and bag bar shown always, on mouseover or hidden." },
     LossOfControl = { "Loss of control", "The loss of control alert in the middle of the screen with a black icon border." },
     Chat = { "Chat", "Chat tabs shared across characters and copyable links." },
@@ -621,6 +640,7 @@ local MODULE_NAMES = {
     ActionBars = { "Range indicator", "Action button icons colored by range, mana and usability." },
     Minimap = { "Minimap buttons", "Addon buttons hidden, shown in a box on right-click." },
     FastLoot = { "Faster loot", "Loots every item at once." },
+    AutoVendor = { "Auto vendor", "Auto sell junk and auto repair, both on opening a vendor." },
     DamageMeter = { "Damage meter", "A new damage meter window matches the first one's size." },
     ObjectiveTracker = { "Objective tracker", "Hides the objective tracker while a quest guide is loaded." },
     Nameplates = { "Nameplates", "Enemy nameplate auras, name, size and test mode." },

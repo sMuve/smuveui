@@ -44,6 +44,14 @@ local UNIT_FRAME_TEXTURES = {
     "PetCastingBarFrame.Border",
     "CastingBarFrame.Border",
     "TargetFrameSpellBar.Border",
+    -- The parchment backing behind the cast icon/text (confirmed live at full brightness while
+    -- .Border/.TextBorder right next to it were already dark) - a piece Target/Focus's cast bar
+    -- template has that Player/Pet's simpler one doesn't.
+    "TargetFrameSpellBar.Background",
+    "FocusFrameSpellBar.Background",
+    -- The non-interruptible-cast shield overlay, same template piece, same issue.
+    "TargetFrameSpellBar.BorderShield",
+    "FocusFrameSpellBar.BorderShield",
     -- Class resources
     "AlternatePowerBar.Border",
     "AlternatePowerBar.LeftBorder",
@@ -60,7 +68,31 @@ local ELITE_TEXTURES = {
     "FocusFrame.TargetFrameContainer.BossPortraitFrameTexture",
 }
 
+-- The border on a cast bar's spell icon isn't a separate texture to darken - confirmed live
+-- (/dump found Icon but no IconBorder) - it's baked into the edges of the icon art itself, the
+-- same way every spell/item icon in the game is. The rest of this addon already crops that same
+-- edge on its own icons (Modules\Nameplates.lua's InitButton); this does the same here.
+local CAST_ICONS = {
+    "PlayerCastingBarFrame.Icon",
+    "TargetFrame.spellbar.Icon",
+    "TargetFrameSpellBar.Icon",
+    "FocusFrame.spellbar.Icon",
+    "FocusFrameSpellBar.Icon",
+    "PetCastingBarFrame.Icon",
+    "CastingBarFrame.Icon",
+}
+
+local function CropCastIcons()
+    for _, path in ipairs(CAST_ICONS) do
+        local icon = S.Resolve(path)
+        if icon and icon.SetTexCoord then
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
+    end
+end
+
 local function DarkenUnitFrames()
+    CropCastIcons()
     for _, path in ipairs(UNIT_FRAME_TEXTURES) do
         S:Darken(S.Resolve(path))
     end
@@ -387,8 +419,11 @@ local PANELS = {
     "GuildBankFrame", "ItemSocketingFrame", "PetStableFrame", "StableFrame",
     "ProfessionsFrame", "WhoFrame", "RaidParentFrame", "GuildFrame", "LFGParentFrame", "BattlefieldFrame",
     "PVPFrame", "HonorFrame", "SmuveUIOptionsFrame", "ColorPickerFrame", "StaticPopup1", "StaticPopup2",
-    "StaticPopup3", "StaticPopup4", "EditModeManagerFrame", "CinematicFrameCloseDialog",
+    "StaticPopup3", "StaticPopup4", "CinematicFrameCloseDialog",
     "BarberShopFrame", "GroupLootHistoryFrame", "LootHistoryFrame", "ArenaFrame", "ProfessionsCustomerOrdersFrame",
+    -- EditModeManagerFrame is deliberately NOT listed here: walking its frame tree with
+    -- SkinFrame caused a reproducible Lua stack overflow (confirmed live), and it's Blizzard's
+    -- own layout tool rather than a panel worth reskinning.
 }
 for i = 1, 13 do
     table.insert(PANELS, "ContainerFrame" .. i)

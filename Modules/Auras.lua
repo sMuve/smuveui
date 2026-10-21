@@ -1,329 +1,298 @@
 local _, S = ...
 local M = S:NewModule("Auras")
 
--- Player buffs and debuffs (BuffFrame / DebuffFrame): cropped icons with a thin black border and
--- the remaining duration inside the icon, at its bottom.
+-- Player buffs and debuffs, built from our own AuraContainer the same way Modules\UnitAuras.lua
+-- already does for target/focus (same InitAuraButton style.playerLook=true look: black border,
+-- debuff-type colored border, white-number/yellow-unit duration, tooltips), instead of reskinning
+-- Blizzard's own BuffFrame/DebuffFrame buttons in place. Confirmed live via /smuve dump that those
+-- native buttons never carry SetDurationText or AddDispelTypeTexture (SetDurationText=nil on
+-- every one of them, every time) - only buttons an AddAuraGroup call creates itself get those -
+-- so the old reskin approach could only ever touch font/size/position, never the duration text's
+-- actual content/color or a debuff border's dispel-type color. The "8m" vs "8 m" switching the
+-- user saw was always the client's own native text underneath, not anything this addon controlled.
+--
+-- Not anchored to BuffFrame/DebuffFrame at all, and Edit Mode is never consulted - confirmed live
+-- through several rounds of this addon's own trial and error (GetPoint on anything parented to
+-- BuffFrame/DebuffFrame is permanently secret, SetSize on either silently does nothing, an
+-- UpdateSystemSetting-driven layout still rendered visibly offset with no way to read back and
+-- correct it) that this client's BuffFrame/DebuffFrame and Edit Mode integration can't be
+-- depended on from addon code. EllesmereUI (this client's own popular UI addon, confirmed by
+-- reading its EllesmereUIUnitFrames/EUI_PlayerAuraBars_Bars.lua) independently arrived at the
+-- same conclusion: its player aura bars are plain UIParent-anchored frames with their own saved
+-- position and their own drag-to-move, Blizzard's BuffFrame/DebuffFrame hidden outright ("so
+-- auras aren't shown twice"). This follows that same proven approach, reusing the plain
+-- drag-while-unlocked pattern already in Modules\LootRoll.lua for its window (Edit Mode doesn't
+-- offer that one either).
 
-local styled = {}
+local AF = AuraUtil and AuraUtil.AuraFilters
+local CreateFilterString = AuraUtil and AuraUtil.CreateFilterString
+local FlowDirection = AnchorUtil and AnchorUtil.FlowDirection
 
-local function PlaceDuration(duration)
-    local button = duration.smuveButton
-    if duration.smuvePlacing then
-        return
-    end
-    duration.smuvePlacing = true
-    duration:ClearAllPoints()
-    duration:SetPoint("BOTTOM", button.smuveIcon, "BOTTOM", 1, 1)
-    duration.smuvePlacing = false
-end
+local ICON_SIZE = 30
+local SPACING = 2
+local DEBUFF_GAP = 10 -- between the buffs container's bottom edge and the debuffs below it
+local MAX_BUFFS = BUFF_MAX_DISPLAY or 32
+local MAX_DEBUFFS = DEBUFF_MAX_DISPLAY or 16
 
--- "8 m" -> "8m" with the unit in the client's yellow; the number stays white. Kept only as a
--- fallback (see StyleDuration below) for whatever rare button doesn't support taking over its
--- duration text outright - on this client duration:GetText() is a SECRET value for every real
--- aura (confirmed live via /smuve dump: "Duration text=<secret>"), so this can never actually
--- match and recolor anything; it's cheap enough to leave running just in case that's ever untrue.
-local function CompactDuration(duration)
-    if duration.smuveCompacting then
-        return
-    end
-    local text = duration:GetText()
-    -- Already done (our own SetText below fires this hook again).
-    if type(text) ~= "string" or S.IsSecret(text) or text:find("|c", 1, true) then
-        return
-    end
-    local compact = text:gsub("(%d)%s*(%a+)", "%1|cffffd100%2|r")
-    if compact ~= text then
-        duration.smuveCompacting = true
-        duration:SetText(compact)
-        duration.smuveCompacting = false
-    end
-end
-
--- The "8m" (white number, yellow unit) format needs the client to apply it internally - the same
--- SetDurationText()+formatter mechanism already used for nameplate, target/focus and BigDebuffs
--- auras - since reading the text back out ourselves to recolor it (the old approach below) can't
--- work on a secret string. Buttons are pooled and reused for different auras, and the client
--- re-registers its OWN duration fontstring whenever a button is reused that way - confirmed live:
--- taking this over only once per button left just whichever aura happened to still be on the
--- button from the last time it was reused correctly formatted, every other one silently reverted.
--- So this is reclaimed on every pass instead of once; SetDurationText is just a binding, calling
--- it again with the same fontstring is harmless.
-local function StyleDuration(button)
-    local original = button.Duration or button.duration
-    if not original and not button.smuveDurationTimer then
-        return
-    end
-    if button.SetDurationText then
-        local timer = button.smuveDurationTimer
-        if not timer then
-            timer = button:CreateFontString(nil, "OVERLAY")
-            timer:SetTextColor(1, 1, 1)
-            timer:SetShadowOffset(0, 0)
-            timer:SetDrawLayer("OVERLAY", 7)
-            button.smuveDurationTimer = timer
-        end
-        local formatter = S.modules.Nameplates.GetUnitDurationFormatter and S.modules.Nameplates.GetUnitDurationFormatter()
-        local ok = pcall(button.SetDurationText, button, timer, formatter and { textFormatter = formatter } or {})
-        if ok then
-            if original and original.SetAlpha then
-                original:SetAlpha(0)
-            end
-            local font, size = S:GetFont(), S.db.appearance.auraDurationSize
-            if timer.smuveFont ~= font or timer.smuveSize ~= size then
-                timer.smuveFont, timer.smuveSize = font, size
-                timer:SetFont(font, size, "OUTLINE")
-            end
-            timer:ClearAllPoints()
-            timer:SetPoint("BOTTOM", button.smuveIcon, "BOTTOM", 1, 1)
-            return
-        end
-        -- Refused this time (a button Blizzard itself built, not one of ours): fall through to
-        -- styling its own fontstring directly instead of erroring.
-        timer:Hide()
-        if original and original.SetAlpha then
-            original:SetAlpha(1)
-        end
-    end
-    -- Fallback: couldn't take over the duration display, so Blizzard's own fontstring is styled
-    -- directly instead - font, size and position work fine this way, only the yellow-unit
-    -- recoloring doesn't (see CompactDuration above).
-    if not original then
-        return
-    end
-    original.smuveButton = button
-    if not original.smuveHooked then
-        original.smuveHooked = true
-        hooksecurefunc(original, "SetPoint", PlaceDuration)
-        hooksecurefunc(original, "SetText", CompactDuration)
-        hooksecurefunc(original, "SetFormattedText", CompactDuration)
-    end
-    CompactDuration(original)
-    local font, size = S:GetFont(), S.db.appearance.auraDurationSize
-    if original.smuveFont ~= font or original.smuveSize ~= size then
-        original.smuveFont, original.smuveSize = font, size
-        original:SetFont(font, size, "OUTLINE")
-        original:SetShadowOffset(0, 0)
-        original:SetDrawLayer("OVERLAY", 7)
-        PlaceDuration(original)
-    end
-end
-
--- The stack count sits in the top right corner, as far from the edge as the duration is from
--- the bottom, in the same font.
-local function PlaceCount(count)
-    if count.smuvePlacing then
-        return
-    end
-    count.smuvePlacing = true
-    count:ClearAllPoints()
-    count:SetPoint("TOPRIGHT", count.smuveButton.smuveIcon, "TOPRIGHT", -1, -1)
-    count.smuvePlacing = false
-end
-
-local function StyleCount(button)
-    local count = button.Count or button.count
-    if not count then
-        return
-    end
-    count.smuveButton = button
-    if not count.smuveHooked then
-        count.smuveHooked = true
-        hooksecurefunc(count, "SetPoint", PlaceCount)
-    end
-    local font, size = S:GetFont(), S.db.appearance.auraDurationSize
-    if count.smuveFont ~= font or count.smuveSize ~= size then
-        count.smuveFont, count.smuveSize = font, size
-        count:SetFont(font, size, "OUTLINE")
-        count:SetShadowOffset(0, 0)
-        count:SetDrawLayer("OVERLAY", 7)
-        PlaceCount(count)
-    end
-end
-
--- All aura text (duration, stacks, debuff type symbol) stays white; the client colors the
--- duration yellow/red as it runs out, which these hooks undo.
-local function KeepWhite(fontString)
-    if fontString.smuveWhitening then
-        return
-    end
-    fontString.smuveWhitening = true
-    fontString:SetTextColor(1, 1, 1)
-    fontString.smuveWhitening = false
-end
-
-local function WhitenText(frame)
-    for _, region in ipairs({ frame:GetRegions() }) do
-        if region:IsObjectType("FontString") then
-            if not region.smuveWhiteHooked then
-                region.smuveWhiteHooked = true
-                hooksecurefunc(region, "SetTextColor", KeepWhite)
-                hooksecurefunc(region, "SetVertexColor", KeepWhite)
-            end
-            KeepWhite(region)
-        end
-    end
-end
-
-local function WhitenButtonText(button)
-    WhitenText(button)
-    for _, child in ipairs({ button:GetChildren() }) do
-        if not child:IsForbidden() then
-            WhitenText(child)
-        end
-    end
-end
-
--- Debuffs keep their dispel type color on the border; everything else is black. The native fix
--- for this (AddDispelTypeTexture, the same one mUI uses - confirmed by reading its forever/
--- Theme/Auras.lua) turned out not to be available here: confirmed live via /smuve dump that
--- "AddDispelTypeTexture=nil" on these specific buttons - it exists on AuraContainer and on
--- buttons an AddAuraGroup call creates itself (used elsewhere in this addon, e.g.
--- Modules\BigDebuffs.lua), but not on Blizzard's own native BuffFrame/DebuffFrame button pool,
--- which this module re-skins rather than replaces. The earlier approach before that (leaving
--- Blizzard's own DebuffBorder visible and just hiding ours) also failed: confirmed live its
--- vertex color stays plain white (1,1,1,1) even for a no-type debuff, so nothing was ever being
--- tinted red/etc automatically to show through in the first place. So this resolves the dispel
--- type by hand instead - the same auraInstanceID -> C_UnitAuras.GetAuraDataByAuraInstanceID
--- lookup already proven non-secret for the player's own auras elsewhere in this addon's debug
--- tooling - and colors our own plain border texture directly from it.
-local DISPEL_COLORS = {
-    Magic = DEBUFF_TYPE_MAGIC_COLOR,
-    Curse = DEBUFF_TYPE_CURSE_COLOR,
-    Disease = DEBUFF_TYPE_DISEASE_COLOR,
-    Poison = DEBUFF_TYPE_POISON_COLOR,
+-- Only buffs gets a saved/draggable position; debuffs is anchored to its container below instead
+-- (see CreateAuraContainer) so a bigger buffs scale, or buffs simply wrapping to another row,
+-- carries debuffs down with it live rather than needing a second position to keep in sync.
+local DEFAULT_POS = {
+    buffs = { point = "TOPRIGHT", x = -275, y = -20 },
 }
 
-local function GetButtonDispelName(button)
-    local instanceId = button.auraInstanceID
-    if instanceId == nil and button.GetAuraInstanceID then
-        local ok, id = pcall(button.GetAuraInstanceID, button)
-        if ok then
-            instanceId = id
+local function DB()
+    return S.db.appearance
+end
+
+local function Supported()
+    return AF and CreateFilterString and FlowDirection and AuraContainerSortMethod ~= nil
+        and S.modules.Nameplates and S.modules.Nameplates.InitAuraButton ~= nil
+end
+
+local parents = {}    -- "buffs" | "debuffs" -> our own movable anchor frame
+local containers = {} -- "buffs" | "debuffs" -> aura container
+M.containers = containers -- read by /smuve dump
+
+-- Hiding Blizzard's own BuffFrame/DebuffFrame -------------------------------------------------
+
+-- The client re-shows these on its own later (confirmed live for the collapse/expand button
+-- earlier, same reasoning applies here) - Show and SetShown are both hooked, plus a cheap
+-- low-frequency ticker as a backstop regardless of mechanism.
+local hiddenForever = setmetatable({}, { __mode = "k" })
+local hideHooked = setmetatable({}, { __mode = "k" })
+
+local function HideForever(frame)
+    if not frame then
+        return
+    end
+    hiddenForever[frame] = true
+    frame:Hide()
+    if not hideHooked[frame] then
+        hideHooked[frame] = true
+        hooksecurefunc(frame, "Show", function(self) self:Hide() end)
+        if frame.SetShown then
+            hooksecurefunc(frame, "SetShown", function(self, shown)
+                if shown then
+                    self:Hide()
+                end
+            end)
         end
     end
-    if instanceId == nil or S.IsSecret(instanceId) then
-        return nil
-    end
-    local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceId)
-    if ok and auraData and not S.IsSecret(auraData.dispelName) then
-        return auraData.dispelName
-    end
-    return nil
 end
 
-local function ColorBorder(button, isDebuff)
-    local border = button.smuveBorder
-    if not isDebuff then
-        border:SetColorTexture(0, 0, 0, 1)
+local hideTicker
+
+local function StartHideTicker()
+    if hideTicker then
         return
     end
-    local dispelName = GetButtonDispelName(button)
-    local color = (dispelName and DISPEL_COLORS[dispelName]) or DEBUFF_TYPE_NONE_COLOR
-    border:SetColorTexture(color.r, color.g, color.b, 1)
+    hideTicker = C_Timer.NewTicker(0.5, function()
+        for frame in pairs(hiddenForever) do
+            if frame:IsShown() then
+                frame:Hide()
+            end
+        end
+    end)
 end
 
-local function StyleButton(button, isDebuff)
-    if not button or button:IsForbidden() then
-        return
+-- Our own frames --------------------------------------------------------------------------------
+
+local function OnDragStart(self)
+    self:StartMoving()
+end
+
+local function OnDragStop(self, key)
+    self:StopMovingOrSizing()
+    local point, _, _, x, y = self:GetPoint(1)
+    if point and not S.IsSecret(point) then
+        DB()["aura" .. key .. "Pos"] = { point = point, x = x, y = y }
     end
-    local icon = button.Icon or button.icon
-    if not icon or not icon.SetTexCoord then
-        return
-    end
-    button.smuveIcon = icon
+end
 
-    if not styled[button] then
-        styled[button] = true
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+local unlockLabels = {}
+local unlockBackdrops = {}
 
-        local layer, sublevel = icon:GetDrawLayer()
-        local border = button:CreateTexture(nil, layer, nil, math.max((sublevel or 0) - 1, -8))
-        PixelUtil.SetPoint(border, "TOPLEFT", icon, "TOPLEFT", -2, 2)
-        PixelUtil.SetPoint(border, "BOTTOMRIGHT", icon, "BOTTOMRIGHT", 2, -2)
-        button.smuveBorder = border
-
-        -- Blizzard's own borders are all hidden - TempEnchantBorder/Border (buffs, never had a
-        -- type to show) and DebuffBorder (debuffs - ours takes over that job above) alike.
-        for _, key in ipairs({ "TempEnchantBorder", "Border", "DebuffBorder" }) do
-            local blizzBorder = button[key]
-            if blizzBorder and blizzBorder.SetAlpha then
-                blizzBorder:SetAlpha(0)
+function M:ApplyUnlocked()
+    local unlocked = DB().auraBarsUnlocked
+    for key, parent in pairs(parents) do
+        parent:SetMovable(true)
+        parent:EnableMouse(unlocked)
+        if unlocked then
+            parent:RegisterForDrag("LeftButton")
+        else
+            parent:RegisterForDrag()
+        end
+        local label = unlockLabels[key]
+        local backdrop = unlockBackdrops[key]
+        if unlocked then
+            if not label then
+                label = parent:CreateFontString(nil, "OVERLAY")
+                label:SetFont(S:GetFont(), 12, "OUTLINE")
+                label:SetPoint("BOTTOM", parent, "TOP", 0, 4)
+                label:SetTextColor(1, 0.82, 0)
+                label:SetText("Buffs - drag to move")
+                unlockLabels[key] = label
+            end
+            if not backdrop then
+                -- Otherwise invisible with nothing active on it - hard to even find to drag.
+                backdrop = parent:CreateTexture(nil, "BACKGROUND")
+                backdrop:SetAllPoints(parent)
+                backdrop:SetColorTexture(0, 0.6, 1, 0.3)
+                unlockBackdrops[key] = backdrop
+            end
+            label:Show()
+            backdrop:Show()
+        else
+            if label then
+                label:Hide()
+            end
+            if backdrop then
+                backdrop:Hide()
             end
         end
     end
-
-    ColorBorder(button, isDebuff)
-    StyleDuration(button)
-    StyleCount(button)
-    WhitenButtonText(button)
 end
 
-local function StyleContainer(auraFrame, isDebuff)
-    if not auraFrame then
-        return
-    end
-    if auraFrame.auraFrames then
-        for _, button in ipairs(auraFrame.auraFrames) do
-            StyleButton(button, isDebuff)
-        end
-    end
-    local container = auraFrame.AuraContainer
-    if container then
-        for _, button in ipairs({ container:GetChildren() }) do
-            StyleButton(button, isDebuff)
-        end
-    end
+local function CreateParent(key)
+    local parent = CreateFrame("Frame", nil, UIParent)
+    -- A minimum clickable size, so the drag handle is grabbable even with nothing active on it.
+    parent:SetSize(ICON_SIZE + SPACING, ICON_SIZE + SPACING)
+    local saved = DB()["aura" .. key .. "Pos"] or DEFAULT_POS[key]
+    parent:SetPoint(saved.point, UIParent, saved.point, saved.x, saved.y)
+    parent:SetClampedToScreen(true)
+    parent:SetScript("OnDragStart", OnDragStart)
+    parent:SetScript("OnDragStop", function(self) OnDragStop(self, key) end)
+    parents[key] = parent
+    return parent
 end
 
-function M:StyleAll()
-    StyleContainer(BuffFrame, false)
-    StyleContainer(DebuffFrame, true)
-    -- Classic style aura buttons, if the client still uses them.
-    for i = 1, 32 do
-        StyleButton(_G["BuffButton" .. i], false)
-        StyleButton(_G["DebuffButton" .. i], true)
+-- Containers ---------------------------------------------------------------------------------------
+
+-- anchorTo: the buffs parent frame for buffs, the buffs container itself for debuffs (anchored to
+-- its bottom edge instead of to a parent of its own - see the comment on DEFAULT_POS above).
+local function CreateAuraContainer(anchorTo, isDebuff)
+    local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
+    container:SetUnit("player")
+    if container.SetFlattensRenderLayers then
+        container:SetFlattensRenderLayers(true)
     end
-    for i = 1, 3 do
-        StyleButton(_G["TempEnchant" .. i], false)
+    local prefix = isDebuff and "auraDebuffs" or "auraBuffs"
+    container:SetScale(DB()[prefix .. "Scale"] or 1)
+    local perRow = DB()[prefix .. "PerRow"] or 10
+    container:SetFlowLayoutAnchorPoint("TOPRIGHT")
+    container:SetFlowLayoutGrowthDirection(FlowDirection.Left, FlowDirection.Down)
+    container:SetFlowLayoutMaximumLineSize(perRow * (ICON_SIZE + SPACING))
+
+    local style = {
+        typeBorders = true, -- debuff borders in their dispel type's color, always on
+        purgeGlow = false,
+        showDuration = true,
+        durationSize = DB().auraDurationSize,
+        playerLook = true, -- duration and stacks positioned/formatted like this style was built for
+        mouse = true,      -- tooltips on hover, like the client's own buff/debuff icons
+    }
+    container:AddAuraGroup(isDebuff and "Debuffs" or "Buffs", CreateFilterString(isDebuff and AF.Harmful or AF.Helpful), {
+        maxFrameCount = isDebuff and MAX_DEBUFFS or MAX_BUFFS,
+        sortMethod = AuraContainerSortMethod.Default,
+        sortDirection = AuraContainerSortDirection.Normal,
+        initializeFrame = function(button)
+            S.modules.Nameplates.InitAuraButton(button, ICON_SIZE, not isDebuff, style)
+            -- Right click to cancel, like the client's own buff icons; debuffs can't be canceled.
+            if not isDebuff and button.SetCancelAuraButtons then
+                button:SetCancelAuraButtons("RightButtonUp")
+            end
+        end,
+        layout = {
+            elementSpacing = SPACING,
+            lineSpacing = SPACING,
+            elementWidth = ICON_SIZE,
+            elementHeight = ICON_SIZE,
+            layoutIndex = 1,
+        },
+    })
+    -- Temporary weapon enchants show alongside buffs, same as the client's own BuffFrame.
+    if not isDebuff and AuraContainerItemEnchantmentSlot then
+        for _, slot in ipairs({ AuraContainerItemEnchantmentSlot.MainHand, AuraContainerItemEnchantmentSlot.OffHand,
+            AuraContainerItemEnchantmentSlot.Ranged }) do
+            container:AddItemEnchantment(slot, {
+                initializeFrame = function(button)
+                    S.modules.Nameplates.InitAuraButton(button, ICON_SIZE, true, style)
+                end,
+            })
+        end
     end
+    container:SetEnabled(true)
+    container:ClearAllPoints()
+    if isDebuff then
+        -- Below the buffs container's actual bottom edge, a live anchor rather than a one-time
+        -- measurement - carries debuffs down automatically when buffs grows (a bigger scale, or
+        -- just wrapping to another row once there are enough of them), instead of needing a
+        -- second saved position to keep in sync with the first by hand.
+        container:SetPoint("TOPRIGHT", anchorTo, "BOTTOMRIGHT", 0, -DEBUFF_GAP)
+    else
+        container:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", 0, 0)
+    end
+    return container
+end
+
+local generation = 0
+
+local function Build()
+    if not parents.buffs then
+        CreateParent("buffs")
+    end
+    -- Buffs first: debuffs anchors to its container below, so it must already exist.
+    for _, key in ipairs({ "buffs", "debuffs" }) do
+        local anchorTo = key == "debuffs" and containers.buffs or parents.buffs
+        if containers[key] and (containers[key].generation ~= generation or not anchorTo) then
+            containers[key]:SetEnabled(false)
+            containers[key]:Hide()
+            containers[key] = nil
+        end
+        if not containers[key] and anchorTo then
+            local container = CreateAuraContainer(anchorTo, key == "debuffs")
+            container.generation = generation
+            containers[key] = container
+        end
+    end
+    M:ApplyUnlocked()
 end
 
 function M:Init()
-    for _, auraFrame in ipairs({ BuffFrame or false, DebuffFrame or false }) do
-        if auraFrame then
-            for _, method in ipairs({ "UpdateAuraButtons", "Update", "UpdateGridLayout" }) do
-                if type(auraFrame[method]) == "function" then
-                    hooksecurefunc(auraFrame, method, function() M:StyleAll() end)
-                end
-            end
+    if not Supported() then
+        return
+    end
+    DB().auraBarsUnlocked = false -- always off after a reload
+    -- Superseded outright, the same way EllesmereUI does it - nothing here depends on them being
+    -- shown, sized, or anchored to any more.
+    for _, frameName in ipairs({ "BuffFrame", "DebuffFrame" }) do
+        local frame = _G[frameName]
+        if frame then
+            HideForever(frame)
         end
     end
-    if AuraButton_Update then
-        hooksecurefunc("AuraButton_Update", function() M:StyleAll() end)
-    end
-    S:On("UNIT_AURA", function(_, unit)
-        if unit == "player" then
-            M:StyleAll()
-        end
-    end)
-    S:On("PLAYER_ENTERING_WORLD", function()
-        M:StyleAll()
-        -- At login the buff/debuff buttons for auras the player already had can be built a
-        -- moment after this fires; a plain reload always catches them, so a few delayed
-        -- passes here do the same without one.
-        for _, delay in ipairs({ 1, 3 }) do
-            C_Timer.After(delay, function() M:StyleAll() end)
-        end
-    end)
-    -- Safety net: confirmed live that some buttons' duration takeover (StyleDuration) still
-    -- hadn't happened well after login and the delayed passes above, even though the event hooks
-    -- that are supposed to catch it (UNIT_AURA, UpdateAuraButtons/Update/UpdateGridLayout) were
-    -- all in place - some update path isn't covered by any of them. StyleAll is cheap to repeat
-    -- (styled[]/smuveDurationTimer make everything in it a no-op once already done), so this just
-    -- keeps calling it at a low, indefinite rate instead of chasing the exact missing trigger.
-    C_Timer.NewTicker(2, function() M:StyleAll() end)
+    StartHideTicker()
+    Build()
 end
 
+-- Settings changed: a new container (slider drags settle first).
 function M:Refresh()
-    self:StyleAll()
+    if not Supported() then
+        return
+    end
+    S.SafeCall(self.ApplyUnlocked, self)
+    if self.rebuildPending then
+        return
+    end
+    self.rebuildPending = true
+    C_Timer.After(0.3, function()
+        M.rebuildPending = false
+        generation = generation + 1
+        Build()
+    end)
+end
+
+function M:IsSupported()
+    return Supported()
 end

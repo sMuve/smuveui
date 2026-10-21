@@ -445,7 +445,12 @@ local function BuildContainers()
         { key = "DefBig", filter = Filter(AF.Helpful, AF.IncludeNameplateOnly, AF.BigDefensive), max = db.importantMax },
         { key = "DefExt", filter = Filter(AF.Helpful, AF.IncludeNameplateOnly, notBig, AF.ExternalDefensive), max = db.importantMax },
         { key = "Important", filter = Filter(AF.Helpful, AF.IncludeNameplateOnly, notBig, notExternal, AF.Important), max = db.importantMax },
-        { key = "Extra", filter = Filter(AF.Helpful, AF.IncludeNameplateOnly), max = db.importantMax,
+        -- Excludes the same three categories the other groups above already claim - without that,
+        -- a spell on this explicit list that Blizzard also tags BigDefensive/ExternalDefensive/
+        -- Important (e.g. Blessing of Protection, both here and ExternalDefensive) matched two
+        -- groups at once and rendered twice (confirmed live on Modules\PartyFrames.lua's identical
+        -- setup).
+        { key = "Extra", filter = Filter(AF.Helpful, AF.IncludeNameplateOnly, notBig, notExternal, notImportant), max = db.importantMax,
             candidateFilters = { includeSpellIDs = EXTRA_IMPORTANT_SPELLS } },
     }, importantSize, true, "TOPRIGHT", FlowDirection.Left, FlowDirection.Down, LineSize(db.importantMax, importantSize))
     -- Debuffs: rows above the bar; a new row starts after "per row" icons and goes on top.
@@ -780,13 +785,40 @@ local function PlateBarColor(unit)
     return (appearance.classColors and PlateClassColor(unit)) or (appearance.reactionColors and PlateReactionColor(unit)) or nil
 end
 
+-- Tapped by another player (you can't loot/get credit), dead, or disconnected: the client grays
+-- the health bar itself (CompactUnitFrame_UpdateHealthColor: 0.9,0.9,0.9 tapped, 0.5,0.5,0.5
+-- dead/offline) before our own color below would otherwise overwrite it. UnitIsTapDenied can't
+-- be read here to detect that directly - a secret value in combat, same class of problem as
+-- Modules\ActionBars.lua's range check - so instead this reads the color the client just set and
+-- leaves it alone when it already matches one of those two grays.
+local SPECIAL_GRAYS = { { 0.9, 0.9, 0.9 }, { 0.5, 0.5, 0.5 } }
+
+local function MatchesSpecialGray(r, g, b)
+    if S.IsSecret(r) or S.IsSecret(g) or S.IsSecret(b) then
+        return false
+    end
+    for _, gray in ipairs(SPECIAL_GRAYS) do
+        if math.abs(r - gray[1]) < 0.01 and math.abs(g - gray[2]) < 0.01 and math.abs(b - gray[3]) < 0.01 then
+            return true
+        end
+    end
+    return false
+end
+
 local barPainting = false
 local barColorHooked = setmetatable({}, { __mode = "k" }) -- health bar -> true
 local barUnit = setmetatable({}, { __mode = "k" })         -- health bar -> its current unit token
 
 local function PaintBarColor(healthBar)
     local unit = barUnit[healthBar]
-    local color = unit and PlateBarColor(unit)
+    if not unit then
+        return
+    end
+    local r, g, b = healthBar:GetStatusBarColor()
+    if MatchesSpecialGray(r, g, b) then
+        return
+    end
+    local color = PlateBarColor(unit)
     if not color then
         return
     end
@@ -812,6 +844,25 @@ local function ApplyBarColor(frame, unit)
         end)
     end
     pcall(PaintBarColor, healthBar)
+end
+
+-- Friendly nameplates --------------------------------------------------------------------------
+-- Both the "name only" simplification (health bar, cast bar, level badge and native buffs/
+-- debuffs all hidden) and the class colored name are native client behavior on this build,
+-- confirmed live via /dump GetCVar(...): fighting the client's own frames with hooks (an earlier
+-- version of this code did - health bar/cast bar alpha, SetTextColor, all reset by the client's
+-- own update passes in ways that kept racing whatever we tried) isn't needed when it already has
+-- CVars for exactly this.
+local FRIENDLY_CVARS = {
+    friendlyNameOnly = "nameplateShowOnlyNameForFriendlyPlayerUnits",
+    friendlyClassColor = "nameplateUseClassColorForFriendlyPlayerUnitNames",
+}
+
+local function ApplyFriendlyCVars()
+    local db = DB()
+    for key, cvar in pairs(FRIENDLY_CVARS) do
+        SetCVar(cvar, db[key] and "1" or "0")
+    end
 end
 
 -- Name and level text size (nil: the client's size).
@@ -1017,6 +1068,7 @@ function M:Init()
         db.layoutVersion = 2
     end
     self:RefreshPurgeTypes()
+    ApplyFriendlyCVars()
 
     S:On("PLAYER_REGEN_ENABLED", function()
         if M.widthPending then
@@ -1082,6 +1134,7 @@ function M:Refresh()
     if not Supported() then
         return
     end
+    ApplyFriendlyCVars()
     self:ApplyWidth()
     self:Rebuild()
 end

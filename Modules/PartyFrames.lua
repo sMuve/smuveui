@@ -92,7 +92,7 @@ end
 -- it's always the leftmost/first icon when something else is also showing.
 local function BuildHost(frame)
     local db = DB()
-    local notBig, notExternal = "!" .. AF.BigDefensive, "!" .. AF.ExternalDefensive
+    local notBig, notExternal, notImportant = "!" .. AF.BigDefensive, "!" .. AF.ExternalDefensive, "!" .. AF.Important
     local host = {}
     host.buffs = CreateContainer(frame, {
         { key = "Buffs", filter = CreateFilterString(AF.Helpful), max = db.buffMax, size = db.buffSize, helpful = true },
@@ -106,7 +106,12 @@ local function BuildHost(frame)
         { key = "DefBig", filter = CreateFilterString(AF.Helpful, AF.IncludeNameplateOnly, AF.BigDefensive), max = db.ccMax, size = db.ccSize, helpful = true },
         { key = "DefExt", filter = CreateFilterString(AF.Helpful, AF.IncludeNameplateOnly, notBig, AF.ExternalDefensive), max = db.ccMax, size = db.ccSize, helpful = true },
         { key = "Important", filter = CreateFilterString(AF.Helpful, AF.IncludeNameplateOnly, notBig, notExternal, AF.Important), max = db.ccMax, size = db.ccSize, helpful = true },
-        { key = "Extra", filter = CreateFilterString(AF.Helpful, AF.IncludeNameplateOnly), max = db.ccMax, size = db.ccSize, helpful = true,
+        -- Excludes the same three categories the other groups above already claim - without that,
+        -- a spell on this explicit list that Blizzard also tags BigDefensive/ExternalDefensive/
+        -- Important (e.g. Blessing of Protection, both here and ExternalDefensive) matched two
+        -- groups at once and rendered twice.
+        { key = "Extra", filter = CreateFilterString(AF.Helpful, AF.IncludeNameplateOnly, notBig, notExternal, notImportant),
+            max = db.ccMax, size = db.ccSize, helpful = true,
             candidateFilters = { includeSpellIDs = EXTRA_IMPORTANT_SPELLS } },
     }, "TOPLEFT", FlowDirection.Right, FlowDirection.Down)
     -- A new frame's strata defaults to MEDIUM regardless of its parent's (confirmed elsewhere in

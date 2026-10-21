@@ -576,6 +576,7 @@ function S:Dump()
                     if container then
                         local okChildren, children = pcall(function() return { container:GetChildren() } end)
                         if okChildren then
+                            table.insert(debug.partyFrameAuras, "  " .. key .. " GetChildren count=" .. #children)
                             for _, button in ipairs(children) do
                                 local instanceId = button.auraInstanceID
                                 if instanceId == nil and button.GetAuraInstanceID then
@@ -584,11 +585,14 @@ function S:Dump()
                                         instanceId = id
                                     end
                                 end
+                                local shownOk, shown = pcall(button.IsShown, button)
+                                table.insert(debug.partyFrameAuras, "  -- " .. key .. " " .. NameOf(button) ..
+                                    " instanceId=" .. tostring(Safe(instanceId)) ..
+                                    " shown=" .. tostring(shownOk and Safe(shown) or "error"))
                                 if instanceId ~= nil and not S.IsSecret(instanceId) and frame and frame.unit then
                                     local okData, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, frame.unit, instanceId)
                                     local name = (okData and auraData and tostring(Safe(auraData.name))) or "no aura data"
-                                    table.insert(debug.partyFrameAuras, "  -- " .. key .. " instanceId=" ..
-                                        tostring(Safe(instanceId)) .. ": " .. name)
+                                    table.insert(debug.partyFrameAuras, "     aura=" .. name)
                                 end
                             end
                         end
@@ -603,22 +607,73 @@ function S:Dump()
     end
 
     -- Player's own buff/debuff border colors (apply a debuff to yourself first, e.g. a poison or
-    -- curse, to see its DebuffBorder/smuveBorder color here).
+    -- curse, to see its DebuffBorder/smuveBorder color here). Covers both our own container
+    -- (Modules\Auras.lua, the one actually meant to be showing) and whatever's left of the
+    -- client's native one (meant to be fully disabled - if it's still reporting real, visible
+    -- children here, it isn't).
     debug.playerAuras = {}
-    for _, frameName in ipairs({ "BuffFrame", "DebuffFrame" }) do
-        local auraFrame = _G[frameName]
-        if auraFrame then
+    local function DumpFrameGeometry(label, frame)
+        if not frame then
+            return
+        end
+        local okPos, point, relTo, relPoint, x, y = pcall(frame.GetPoint, frame, 1)
+        local okSize, w, h = pcall(frame.GetSize, frame)
+        table.insert(debug.playerAuras, string.format(
+            "%s shown=%s visible=%s scale=%s point=%s pos=%s,%s size=%s",
+            label, tostring(Safe(frame.IsShown and frame:IsShown())),
+            tostring(Safe(frame.IsVisible and frame:IsVisible())),
+            tostring(Safe(frame.GetScale and frame:GetScale())),
+            okPos and tostring(Safe(point)) .. ">" .. NameOf(relTo) or "error",
+            okPos and tostring(Safe(x)) or "?", okPos and tostring(Safe(y)) or "?",
+            okSize and (tostring(Safe(w)) .. "x" .. tostring(Safe(h))) or "error"))
+    end
+    for key, frameName in pairs({ buffs = "BuffFrame", debuffs = "DebuffFrame" }) do
+        local hostFrame = _G[frameName]
+        if hostFrame then
             table.insert(debug.playerAuras, "== " .. frameName)
-            local buttons = auraFrame.auraFrames
-            if not buttons and auraFrame.AuraContainer then
-                local container = auraFrame.AuraContainer
-                local ok, children = pcall(function() return { container:GetChildren() } end)
+            DumpFrameGeometry("  hostFrame", hostFrame)
+            local native = hostFrame.AuraContainer
+            if native then
+                DumpFrameGeometry("  native AuraContainer", native)
+                table.insert(debug.playerAuras, "  native fields: iconScale=" .. tostring(native.iconScale) ..
+                    " iconStride=" .. tostring(native.iconStride) ..
+                    " addIconsToRight=" .. tostring(native.addIconsToRight) ..
+                    " addIconsToTop=" .. tostring(native.addIconsToTop) ..
+                    " isHorizontal=" .. tostring(native.isHorizontal))
+                local okChildren, children = pcall(function() return { native:GetChildren() } end)
+                local shownCount = 0
+                if okChildren then
+                    for _, child in ipairs(children) do
+                        local ok, shown = pcall(child.IsShown, child)
+                        if ok and shown then
+                            shownCount = shownCount + 1
+                        end
+                    end
+                    table.insert(debug.playerAuras, "  native children=" .. #children .. " shown=" .. shownCount)
+                end
+            end
+            for _, widgetName in ipairs({ "ConsolidatedBuffs", "CollapseAndExpandButton" }) do
+                local widget = hostFrame[widgetName]
+                if widget then
+                    DumpFrameGeometry("  " .. widgetName, widget)
+                end
+            end
+            local ours = S.modules.Auras and S.modules.Auras.containers and S.modules.Auras.containers[key]
+            if ours then
+                DumpFrameGeometry("  ours", ours)
+            else
+                table.insert(debug.playerAuras, "  ours: none")
+            end
+            local buttons = {}
+            if ours then
+                local ok, children = pcall(function() return { ours:GetChildren() } end)
                 buttons = ok and children or {}
             end
-            buttons = buttons or {}
             for _, button in ipairs(buttons) do
                 table.insert(debug.playerAuras, "-- " .. NameOf(button) ..
                     " AddDispelTypeTexture=" .. type(button.AddDispelTypeTexture) ..
+                    " SetDurationText=" .. type(button.SetDurationText) ..
+                    " smuveDurationFormatter=" .. tostring(button.smuveDurationFormatter) ..
                     " debuffType=" .. tostring(Safe(button.debuffType)))
                 local instanceId = button.auraInstanceID
                 if instanceId == nil and button.GetAuraInstanceID then
@@ -659,8 +714,19 @@ function S:Dump()
                     local text = duration:GetText()
                     local font, size = duration:GetFont()
                     table.insert(debug.playerAuras, string.format(
-                        "Duration text=%q font=%s@%s hooked=%s",
-                        tostring(Safe(text)), tostring(font), tostring(Safe(size)), tostring(duration.smuveHooked)))
+                        "Duration text=%q font=%s@%s alpha=%s shown=%s hooked=%s",
+                        tostring(Safe(text)), tostring(font), tostring(Safe(size)),
+                        tostring(Safe(duration:GetAlpha())), tostring(Safe(duration:IsShown())),
+                        tostring(duration.smuveHooked)))
+                end
+                local timer = button.smuveDurationTimer
+                if timer then
+                    local text = timer:GetText()
+                    local font, size = timer:GetFont()
+                    table.insert(debug.playerAuras, string.format(
+                        "smuveDurationTimer text=%q font=%s@%s alpha=%s shown=%s",
+                        tostring(Safe(text)), tostring(font), tostring(Safe(size)),
+                        tostring(Safe(timer:GetAlpha())), tostring(Safe(timer:IsShown()))))
                 end
             end
         end
