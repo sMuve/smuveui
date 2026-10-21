@@ -2,6 +2,7 @@ package-as: SmuveUI
 
 ignore:
   - README.md
+  - CLAUDE.md
 
 manual-changelog:
   filename: CHANGELOG.md

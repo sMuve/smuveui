@@ -6,6 +6,7 @@
 ## SavedVariables: SmuveUIDB
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## AddonCompartmentFunc: SmuveUI_OnAddonCompartmentClick
+## X-Curse-Project-ID: 1756517
 
 Core.lua
 Debug.lua
