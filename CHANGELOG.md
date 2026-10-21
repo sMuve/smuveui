@@ -13,7 +13,7 @@ All notable changes to this addon are documented here.
   colored by dispel type, and tooltips. Both bars can now be moved freely (their own unlock
   option) and scaled and resized (icons per row) independently; the debuff bar always stays
   anchored below the buff bar, even when it wraps to another row.
-- The experience/reputation bar above the action bars is resizable again and, like the action
+- The experience/reputation bar is resizable again and, like the action
   bars, can be shown on mouseover.
 - Dark mode: spell icons on cast bars no longer show their baked-in light border, and the
   target/focus cast bar's background and non-interruptible shield are darkened too.
