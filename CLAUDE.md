@@ -1,40 +1,42 @@
-# Release-Prozess
+# Release Process
 
-Wenn der Nutzer sagt, dass er bereit für einen Release ist (z. B. "ready für einen Release",
-"Release vorbereiten", "Version X.Y.Z veröffentlichen"), führe diese Schritte aus:
+When the user says they're ready for a release (e.g. "ready for a release", "let's prepare a
+release", "release version X.Y.Z"), carry out these steps:
 
-1. **Version festlegen**: Wenn keine explizite Versionsnummer genannt wurde, schlage anhand der
-   Commits seit dem letzten Git-Tag eine sinnvolle nächste Version vor (Patch für Bugfixes, Minor
-   für neue Features) und frag kurz nach, bevor du weitermachst.
+1. **Determine the version**: If no explicit version number was given, suggest a sensible next
+   version based on the commits since the last git tag (patch for bug fixes, minor for new
+   features), and briefly ask for confirmation before proceeding.
 
-2. **`.toc` aktualisieren**: Setze `## Version:` in `SmuveUI.toc` auf die neue Version.
+2. **Update `.toc`**: Set `## Version:` in `SmuveUI.toc` to the new version.
 
-3. **`CHANGELOG.md` pflegen**: Füge direkt unter der Überschrift einen neuen Abschnitt ein:
+3. **Maintain `CHANGELOG.md`**: Insert a new section right below the heading:
 
    ```
    ## <version> - <YYYY-MM-DD>
-   - <Änderung 1>
-   - <Änderung 2>
+   - <change 1>
+   - <change 2>
    ```
 
-   Leite die Einträge aus `git log <letzter-tag>..HEAD --oneline` ab, formuliere sie aber als
-   lesbare, nutzerorientierte Sätze - keine rohen Commit-Messages, keine internen
-   Refactoring-Details, die für CurseForge-Nutzer irrelevant sind.
+   Derive the entries from `git log <last-tag>..HEAD --oneline`, but phrase them as readable,
+   user-facing sentences - no raw commit messages, no internal refactoring details that are
+   irrelevant to CurseForge users. The changelog must be written **in English** (CurseForge
+   audience).
 
-4. **Committen**: Commit-Message `Release <version>`, enthält die `.toc`- und `CHANGELOG.md`-Änderung.
+4. **Commit**: commit message `Release <version>`, containing the `.toc` and `CHANGELOG.md`
+   changes.
 
-5. **Taggen**: Annotierten Git-Tag exakt mit der Versionsnummer erstellen, **ohne "v"-Prefix**
-   (z. B. `0.2.0`) - dieser Tag wird von der CurseForge-Pipeline (BigWigsMods/packager) 1:1 als
-   `project-version` übernommen.
+5. **Tag**: create an annotated git tag exactly matching the version number, **without a "v"
+   prefix** (e.g. `0.2.0`) - this tag is passed 1:1 as `project-version` to the CurseForge
+   pipeline (BigWigsMods/packager).
 
-6. **Vor jedem Push - Pflicht-Checkliste**: Push niemals, ohne das vorher zu prüfen:
-   - Ist die Version in `SmuveUI.toc` seit dem letzten Tag tatsächlich erhöht worden? Falls nicht,
-     zuerst nachholen (Schritt 2) - nie mit unveränderter Version pushen.
-   - Zeig dem Nutzer den neuen `CHANGELOG.md`-Abschnitt und warte auf seine ausdrückliche
-     Bestätigung (Review), bevor du weitermachst.
-   - Erst danach: `git push && git push --tags`. Das löst automatisch den CurseForge-Upload über
-     die GitHub Action aus (Trigger: nur Tags, keine normalen Pushes auf `main`).
+6. **Mandatory checklist before every push**: never push without checking this first:
+   - Has the version in `SmuveUI.toc` actually been bumped since the last tag? If not, do that
+     first (step 2) - never push with an unchanged version.
+   - Show the user the new `CHANGELOG.md` section and wait for their explicit confirmation
+     (review) before proceeding.
+   - Only then: `git push && git push --tags`. This automatically triggers the CurseForge upload
+     via the GitHub Action (trigger: tags only, not regular pushes to `main`).
 
-Die `.pkgmeta` nutzt `manual-changelog`, d. h. der Packager lädt exakt den Inhalt von
-`CHANGELOG.md` zu CurseForge hoch statt automatisch aus dem Git-Log zu generieren - Schritt 3 ist
-daher für einen sauberen Changelog auf CurseForge wichtig.
+`.pkgmeta` uses `manual-changelog`, meaning the packager uploads the exact content of
+`CHANGELOG.md` to CurseForge instead of generating one from the git log automatically - step 3 is
+therefore important for a clean changelog on CurseForge.
