@@ -2,7 +2,7 @@
 ## Title: |cff9d9d9dSmuve|r|cffffffffUI|r
 ## Notes: A dark, polished reskin of the WoW Forever default UI.
 ## Author: Smuve
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: SmuveUIDB
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## AddonCompartmentFunc: SmuveUI_OnAddonCompartmentClick
