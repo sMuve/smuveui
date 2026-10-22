@@ -205,6 +205,12 @@ end
 -- Debuff border colors by dispel type (physical debuffs: "None").
 -- Debuffs without a type ("None", physical) get a red border.
 local BORDER_SIZE = 2 -- pixels, like the player's own auras
+
+-- Shared with Modules\Auras.lua, for the weapon-imbue cells it draws itself (see there) - the
+-- same black border as every other aura icon, on a plain frame rather than a client aura button.
+M.AddBlackBorder = AddBlackBorder
+M.BORDER_SIZE = BORDER_SIZE
+
 local DISPEL_TYPES = { "None", "Magic", "Curse", "Disease", "Poison", "Bleed", "Enrage" }
 local TYPE_COLORS = {
     None = { 0.80, 0.00, 0.00 },

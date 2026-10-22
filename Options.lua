@@ -488,6 +488,9 @@ end }
 
 CATEGORIES[5] = { key = "player", title = "Player", indent = true, build = function(layout)
     Header(layout, "Auras")
+    if not S.modules.Auras:IsSupported() then
+        Note(layout, "This client doesn't offer the aura containers these auras need, so they are inactive.")
+    end
     Slider(layout, "Aura duration size", "Text size of the remaining time and the stack count (top right) on your buffs and debuffs.",
         6, 20, 1, Setting("appearance", "auraDurationSize", "Auras"))
     Checkbox(layout, "Unlock buffs bar",

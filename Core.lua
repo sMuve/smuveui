@@ -12,7 +12,7 @@ S.defaults = {
         darkMode = true,
         darkness = 90,          -- percent; 90 means textures keep 10% of their brightness
         font = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf", -- "DEFAULT" keeps the client's fonts instead
-        auraDurationSize = 10,
+        auraDurationSize = 12,
         auraBuffsPos = nil,     -- { point, x, y }; nil keeps the built-in default position. Debuffs
                                 -- anchors to the buffs container instead of having its own position.
         auraBarsUnlocked = false, -- always off after a reload; drag the buffs bar while it's on
