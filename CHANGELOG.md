@@ -2,6 +2,12 @@
 
 All notable changes to this addon are documented here.
 
+## 0.2.1 - 2026-10-22
+- Weapon imbues (shaman imbues, rogue poisons/whetstones) now show on your buffs bar, the same
+  way the default UI shows them.
+- Your debuffs now keep a minimum distance below your buffs, so a handful of buffs no longer
+  leaves debuffs crowded right underneath them.
+
 ## 0.2.0 - 2026-10-22
 - Vendors: optional auto repair and auto sell junk, each with a chat message reporting the cost
   or revenue.
