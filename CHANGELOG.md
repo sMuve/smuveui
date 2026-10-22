@@ -2,6 +2,15 @@
 
 All notable changes to this addon are documented here.
 
+## 0.2.2 - 2026-10-23
+- New: an optional +COMBAT/-COMBAT flash in the center of the screen when you enter or leave
+  combat (Options -> QoL -> Combat).
+- Fixed the elite/boss portrait wreath on the target and focus frame turning gray in dark mode.
+- The loot roll window can now be repositioned even while no roll is active.
+- Need/Greed/Pass buttons now visibly gray out once you've voted on a roll.
+- "Keep the roll window open until everyone's chosen" is now its own toggle, separate from the
+  roll tracker.
+
 ## 0.2.1 - 2026-10-22
 - Weapon imbues (shaman imbues, rogue poisons/whetstones) now show on your buffs bar, the same
   way the default UI shows them.
