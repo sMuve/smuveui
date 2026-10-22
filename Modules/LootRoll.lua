@@ -209,7 +209,28 @@ end
 -- combat, the same restriction the bigger health bar runs into on protected unit frame elements).
 local pendingEnable = {} -- frame -> true
 
+-- This client's Need/Greed/Pass buttons have no DisabledTexture of their own (confirmed live via
+-- /smuve dump - NormalTexture/HighlightTexture/PushedTexture only), so Disable() alone blocks
+-- clicks without changing how the button looks at all. Desaturating the normal texture and
+-- dimming the button gives it an actual grayed-out look to go with that.
+local function SetButtonGrayed(button, grayed)
+    local normal = button.GetNormalTexture and button:GetNormalTexture()
+    if normal and normal.SetDesaturated then
+        normal:SetDesaturated(grayed)
+    end
+    button:SetAlpha(grayed and 0.4 or 1)
+end
+
 local function RestoreButtons(frame)
+    -- The cosmetic part (SetButtonGrayed) isn't a protected call like Disable()/SetEnabled() are,
+    -- so it always runs right away - only the actual re-enable waits on combat ending below.
+    for choice in pairs(BUTTON_KEYS) do
+        local button = GetButton(frame, choice)
+        if button and button.smuveGrayed then
+            SetButtonGrayed(button, false)
+            button.smuveGrayed = nil
+        end
+    end
     if InCombatLockdown() then
         pendingEnable[frame] = true
         return
@@ -237,7 +258,7 @@ end
 
 -- After your own roll the frame stays while others are still choosing.
 local function ShouldLinger(rollID)
-    if not Enabled() or not rollID then
+    if not Enabled() or not S.db.qol.lootRollLinger or not rollID then
         return false
     end
     if rollEnds[rollID] and GetTime() >= rollEnds[rollID] then
@@ -249,9 +270,18 @@ end
 
 local function StartLinger(frame, rollID)
     lingering[frame] = rollID
-    -- This almost always happens mid-fight (you rolled on a boss drop, others haven't yet).
-    -- Disable() on these buttons is the same kind of protected call that blocks SetHeight on the
-    -- unit frames in combat; left enabled, a second click just has nothing left to confirm.
+    -- The gray-out (SetButtonGrayed) always applies right away, combat or not - it's plain
+    -- texture/alpha calls, not the protected kind. Only the actual Disable() below - this almost
+    -- always happens mid-fight (you rolled on a boss drop, others haven't yet) - needs combat to
+    -- end first, the same protected-call restriction Modules\UnitFrames.lua's bigger health bar
+    -- runs into; left clickable in the meantime, a second click just has nothing left to confirm.
+    for choice in pairs(BUTTON_KEYS) do
+        local button = GetButton(frame, choice)
+        if button then
+            SetButtonGrayed(button, true)
+            button.smuveGrayed = true
+        end
+    end
     if InCombatLockdown() then
         return
     end
@@ -355,17 +385,31 @@ end
 
 -- Moving the window ---------------------------------------------------------------------------
 -- Edit Mode doesn't offer the loot roll window at all, so this is a plain drag-while-unlocked
--- toggle instead: GroupLootContainer is what every GroupLootFrame is actually anchored to
--- (confirmed live - GroupLootFrame1 is anchored to GroupLootContainer, not to UIParent itself),
--- so moving that one frame moves the whole stack.
+-- toggle instead - but GroupLootContainer itself (what every GroupLootFrame is actually anchored
+-- to - confirmed live, GroupLootFrame1 is anchored to GroupLootContainer, not to UIParent) sizes
+-- to its content, so with no roll active it's zero-sized and has nothing to grab. Same fix as the
+-- player buffs bar (Modules\Auras.lua): a small always-there handle frame of our own, anchored to
+-- UIParent at the saved position, with GroupLootContainer anchored to IT instead of to UIParent
+-- directly - so dragging the handle (visible/grabbable even with no roll showing) moves the real
+-- window right along with it.
 
+local DEFAULT_POS = { point = "CENTER", x = 0, y = 150 }
+local HANDLE_SIZE = 180 -- wide enough to read the label under it; height is cosmetic only
+
+local handle
 local unlockLabel
+local unlockBackdrop
 
 local function RestorePosition()
-    local pos = S.db.qol.lootRollPosition
-    if pos and GroupLootContainer then
+    if not handle then
+        return
+    end
+    local pos = S.db.qol.lootRollPosition or DEFAULT_POS
+    handle:ClearAllPoints()
+    handle:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
+    if GroupLootContainer then
         GroupLootContainer:ClearAllPoints()
-        GroupLootContainer:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
+        GroupLootContainer:SetPoint(pos.point, handle, pos.point, 0, 0)
     end
 end
 
@@ -379,32 +423,68 @@ local function OnDragStop(self)
     if point and not S.IsSecret(point) then
         S.db.qol.lootRollPosition = { point = point, x = x, y = y }
     end
+    -- The container's own anchor point has to follow the handle's possibly-new point too, not
+    -- just its x/y - RestorePosition re-anchors both from the same saved position.
+    RestorePosition()
+end
+
+local function CreateHandle()
+    if handle then
+        return
+    end
+    -- GroupLootContainer inherits BottomManagedFrameTemplate - Blizzard's own alert-frame layout
+    -- manager (Blizzard_ManagedFrameSystem) re-adds it to its managed container and re-anchors it
+    -- (ManagedFrameContainerMixin:AddManagedFrame, called from the container's own OnShow) every
+    -- single time it's shown, silently undoing whatever point RestorePosition just set - confirmed
+    -- live, the roll window kept opening at its default spot regardless. AddManagedFrame checks
+    -- this flag first and bails out immediately if it's set, which is the documented way to opt a
+    -- frame out of that system entirely.
+    if GroupLootContainer then
+        GroupLootContainer.ignoreFramePositionManager = true
+    end
+    handle = CreateFrame("Frame", nil, UIParent)
+    handle:SetSize(HANDLE_SIZE, HANDLE_SIZE * 0.3)
+    handle:SetClampedToScreen(true)
+    handle:SetScript("OnDragStart", OnDragStart)
+    handle:SetScript("OnDragStop", OnDragStop)
+    RestorePosition()
 end
 
 function M:ApplyUnlocked()
-    local container = GroupLootContainer
-    if not container then
+    if not handle then
         return
     end
     local unlocked = S.db.qol.lootRollUnlocked
-    container:SetMovable(true)
-    container:EnableMouse(unlocked)
+    handle:SetMovable(true)
+    handle:EnableMouse(unlocked)
     if unlocked then
-        container:RegisterForDrag("LeftButton")
+        handle:RegisterForDrag("LeftButton")
     else
-        container:RegisterForDrag()
+        handle:RegisterForDrag()
     end
     if unlocked then
         if not unlockLabel then
-            unlockLabel = container:CreateFontString(nil, "OVERLAY")
+            unlockLabel = handle:CreateFontString(nil, "OVERLAY")
             unlockLabel:SetFont(S:GetFont(), 12, "OUTLINE")
-            unlockLabel:SetPoint("BOTTOM", container, "TOP", 0, 4)
+            unlockLabel:SetPoint("BOTTOM", handle, "TOP", 0, 4)
             unlockLabel:SetTextColor(1, 0.82, 0)
             unlockLabel:SetText("Loot roll window - drag to move")
         end
+        if not unlockBackdrop then
+            -- Otherwise invisible with no roll active - hard to even find to drag.
+            unlockBackdrop = handle:CreateTexture(nil, "BACKGROUND")
+            unlockBackdrop:SetAllPoints(handle)
+            unlockBackdrop:SetColorTexture(0, 0.6, 1, 0.3)
+        end
         unlockLabel:Show()
-    elseif unlockLabel then
-        unlockLabel:Hide()
+        unlockBackdrop:Show()
+    else
+        if unlockLabel then
+            unlockLabel:Hide()
+        end
+        if unlockBackdrop then
+            unlockBackdrop:Hide()
+        end
     end
 end
 
@@ -512,9 +592,7 @@ function M:Init()
     end
 
     if GroupLootContainer then
-        GroupLootContainer:SetScript("OnDragStart", OnDragStart)
-        GroupLootContainer:SetScript("OnDragStop", OnDragStop)
-        RestorePosition()
+        CreateHandle()
         M:ApplyUnlocked()
     end
 

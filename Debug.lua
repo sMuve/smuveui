@@ -235,6 +235,65 @@ function S:Dump()
     else
         table.insert(debug.nameplate, "no nameplate for the target")
     end
+    -- The target's actual state and its health bar's live rendered color - Describe() above has
+    -- no branch for a StatusBar's own GetStatusBarColor, so the Walk dump never shows it.
+    debug.nameplateUnit = {}
+    if UnitExists("target") then
+        local t = "target"
+        table.insert(debug.nameplateUnit, "classification=" .. tostring(Safe(UnitClassification(t))))
+        table.insert(debug.nameplateUnit, "isDead=" .. tostring(Safe(UnitIsDead(t))) ..
+            " isGhost=" .. tostring(Safe(UnitIsGhost(t))) ..
+            " isConnected=" .. tostring(Safe(UnitIsConnected(t))))
+        table.insert(debug.nameplateUnit, "health=" .. tostring(Safe(UnitHealth(t))) ..
+            "/" .. tostring(Safe(UnitHealthMax(t))))
+        table.insert(debug.nameplateUnit, "reaction=" .. tostring(Safe(UnitReaction(t, "player"))) ..
+            " canAttack=" .. tostring(Safe(UnitCanAttack("player", t))))
+        if UnitIsTapDenied then
+            table.insert(debug.nameplateUnit, "isTapDenied=" .. tostring(Safe(UnitIsTapDenied(t))))
+        end
+        local healthBar = plate and plate.UnitFrame and plate.UnitFrame.HealthBarsContainer and
+            plate.UnitFrame.HealthBarsContainer.healthBar
+        if healthBar then
+            local ok, r, g, b = pcall(healthBar.GetStatusBarColor, healthBar)
+            if ok then
+                table.insert(debug.nameplateUnit, "healthBar color=" .. tostring(Safe(r)) .. "," ..
+                    tostring(Safe(g)) .. "," .. tostring(Safe(b)))
+            else
+                table.insert(debug.nameplateUnit, "healthBar color: error " .. tostring(r))
+            end
+        else
+            table.insert(debug.nameplateUnit, "no healthBar found")
+        end
+        -- The level-difficulty badge next to the health bar (PlayerLevelDiffFrame) - whether our
+        -- own darkening ever actually reaches its ring icon, and what color it's showing live.
+        local level = plate and plate.UnitFrame and plate.UnitFrame.PlayerLevelDiffFrame
+        if level then
+            local okAcc, accessible = pcall(function()
+                return (not level.IsForbidden or not level:IsForbidden())
+                    and (not level.CanBeAccessedInContext or level:CanBeAccessedInContext())
+            end)
+            table.insert(debug.nameplateUnit, "PlayerLevelDiffFrame accessible=" ..
+                tostring(okAcc and accessible) .. " shown=" .. tostring(Safe(level:IsShown())) ..
+                " tracked=" .. tostring(S.DarkModeDebugIsTracked and S.DarkModeDebugIsTracked(level.playerLevelDiffIcon)))
+            local icon = level.playerLevelDiffIcon
+            if icon then
+                local okColor, r, g, b = pcall(icon.GetVertexColor, icon)
+                if okColor then
+                    table.insert(debug.nameplateUnit, "playerLevelDiffIcon color=" .. tostring(Safe(r)) .. "," ..
+                        tostring(Safe(g)) .. "," .. tostring(Safe(b)) ..
+                        " desaturated=" .. tostring(icon.IsDesaturated and Safe(icon:IsDesaturated())))
+                else
+                    table.insert(debug.nameplateUnit, "playerLevelDiffIcon color: error " .. tostring(r))
+                end
+            else
+                table.insert(debug.nameplateUnit, "no playerLevelDiffIcon")
+            end
+        else
+            table.insert(debug.nameplateUnit, "no PlayerLevelDiffFrame")
+        end
+    else
+        table.insert(debug.nameplateUnit, "no target")
+    end
     debug.api = {}
     local function Keys(label, source)
         local keys = {}

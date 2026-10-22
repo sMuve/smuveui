@@ -34,11 +34,13 @@ S.defaults = {
         characterInfo = true,
         itemLevel = true,       -- item level on equipped items, colored by rarity
         lootRolls = true,
+        lootRollLinger = true,   -- the roll window stays up after you voted until everyone has
         lootRollUnlocked = false, -- always off after a reload; drag the window while it's on
         autoSellJunk = false,     -- sells poor-quality items the moment a vendor window opens
         autoRepair = false,       -- repairs all equipped gear the moment a vendor window opens
         hideObjectiveTracker = false,  -- only acts while RestedXP, Journey or Polestar is loaded
         matchDamageMeterSize = true,   -- a new damage meter window matches the first one's size
+        combatIndicator = false,  -- +COMBAT/-COMBAT flashed center screen entering/leaving combat
     },
     actionbars = {
         rangeIndicator = true,
@@ -247,6 +249,7 @@ end
 local tracked = {}    -- texture -> brightness offset
 local originals = {}  -- texture -> { r, g, b, desaturated }
 local conditions = {} -- texture -> function deciding whether it is dark (default: dark mode)
+local keepColor = {}  -- texture -> true: dim it, but don't flatten its own baked-in color to gray
 local painting = false
 
 function S:DarkModeActive()
@@ -265,14 +268,22 @@ local function Paint(texture)
     end
     painting = true
     local condition = conditions[texture]
+    local original = originals[texture]
     if (condition and condition()) or (not condition and S:DarkModeActive()) then
         local value = S:Shade(offset)
-        if texture.SetDesaturated then
-            texture:SetDesaturated(true)
+        if keepColor[texture] then
+            -- Dim the texture's own (possibly dynamic - e.g. a boss/elite atlas Blizzard tints
+            -- gold vs. a plain one) color instead of flattening it to gray: OnRecolored below
+            -- keeps `original` refreshed with whatever Blizzard itself last set, so this is always
+            -- dimming the real current color, never our own previous dimmed output.
+            texture:SetVertexColor(original.r * value, original.g * value, original.b * value)
+        else
+            if texture.SetDesaturated then
+                texture:SetDesaturated(true)
+            end
+            texture:SetVertexColor(value, value, value)
         end
-        texture:SetVertexColor(value, value, value)
     else
-        local original = originals[texture]
         if texture.SetDesaturated then
             texture:SetDesaturated(original.desaturated)
         end
@@ -285,6 +296,14 @@ local function OnRecolored(texture)
     if painting then
         return
     end
+    if keepColor[texture] then
+        -- A genuine (not ours) SetVertexColor call: Blizzard just set the color this texture is
+        -- actually supposed to have right now, so that's the new baseline to dim from/restore to.
+        local r, g, b = texture:GetVertexColor()
+        if not (S.IsSecret(r) or S.IsSecret(g) or S.IsSecret(b)) then
+            originals[texture].r, originals[texture].g, originals[texture].b = r, g, b
+        end
+    end
     local condition = conditions[texture]
     if (condition and condition()) or (not condition and S:DarkModeActive()) then
         Paint(texture)
@@ -292,7 +311,10 @@ local function OnRecolored(texture)
 end
 
 -- condition: optional function; the texture is dark while it returns true (default: dark mode on).
-function S:Darken(texture, offset, condition)
+-- keepTextureColor: dim the texture's own baked-in color instead of flattening it to gray - for
+-- art whose color is the point (the elite portrait wreath, say), where SetDesaturated(true) plus
+-- a gray vertex tint would otherwise erase it rather than just darkening it.
+function S:Darken(texture, offset, condition, keepTextureColor)
     if type(texture) ~= "table" or not texture.SetVertexColor or not texture.IsObjectType then
         return
     end
@@ -320,7 +342,13 @@ function S:Darken(texture, offset, condition)
     end
     tracked[texture] = offset or 0
     conditions[texture] = condition
+    keepColor[texture] = keepTextureColor or nil
     Paint(texture)
+end
+
+-- /smuve dump only: whether S:Darken has ever actually run on this texture.
+function S.DarkModeDebugIsTracked(texture)
+    return texture ~= nil and tracked[texture] ~= nil
 end
 
 -- Darkens every texture region of a frame (not its children).

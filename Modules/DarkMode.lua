@@ -15,10 +15,10 @@ local UNIT_FRAME_TEXTURES = {
     "PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon",
     "PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.LevelBackgroundCircle",
     "PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.PvpBackgroundCircle",
-    "TargetFrame.TargetFrameContainer.FrameTexture",
+    -- TargetFrame.TargetFrameContainer.FrameTexture/FocusFrame's own are NOT here - see
+    -- ELITE_TEXTURES below, they share this same bronze ring with the elite portrait overlay.
     "TargetFrame.TargetFrameContent.TargetFrameContentMain.LevelBackgroundCircle",
     "TargetFrame.totFrame.FrameTexture",
-    "FocusFrame.TargetFrameContainer.FrameTexture",
     "FocusFrame.TargetFrameContent.TargetFrameContentMain.LevelBackgroundCircle",
     "FocusFrame.totFrame.FrameTexture",
     "TargetFrameToT.FrameTexture",
@@ -63,10 +63,21 @@ local UNIT_FRAME_TEXTURES = {
     "PaladinPowerBarFrame.ActiveTexture",
 }
 
+-- The plain bronze portrait ring every target (elite or not) shares - kept at its own baked-in
+-- color rather than flattened like the rest of UNIT_FRAME_TEXTURES, since the elite wreath below
+-- is layered directly on top of it (TargetFrame.xml) and needs it to not read as a near-black ring
+-- showing through the wreath's gaps.
 local ELITE_TEXTURES = {
-    "TargetFrame.TargetFrameContainer.BossPortraitFrameTexture",
-    "FocusFrame.TargetFrameContainer.BossPortraitFrameTexture",
+    "TargetFrame.TargetFrameContainer.FrameTexture",
+    "FocusFrame.TargetFrameContainer.FrameTexture",
 }
+
+-- The elite/boss portrait wreath itself (BossPortraitFrameTexture) is deliberately NOT darkened
+-- at all - confirmed live that even dimmed-but-color-preserved (S:Darken's keepTextureColor) was
+-- still too washed out next to its actual bright gold/bronze art, and there's no brightness offset
+-- between "flattened gray" and "untouched" that reads as "dark-mode-appropriate gold" rather than
+-- either too gray or too bright. It's a small, infrequently-seen accent (elite/boss targets only),
+-- not worth chasing further - left at its native, undarkened color instead.
 
 -- The border on a cast bar's spell icon isn't a separate texture to darken - confirmed live
 -- (/dump found Icon but no IconBorder) - it's baked into the edges of the icon art itself, the
@@ -97,7 +108,9 @@ local function DarkenUnitFrames()
         S:Darken(S.Resolve(path))
     end
     for _, path in ipairs(ELITE_TEXTURES) do
-        S:Darken(S.Resolve(path), ELITE)
+        -- keepTextureColor: the gold/bronze ring's own color is the whole point of it, so it's
+        -- just dimmed rather than flattened to gray like plain chrome.
+        S:Darken(S.Resolve(path), ELITE, nil, true)
     end
 
     for i = 1, 4 do

@@ -25,6 +25,7 @@ Modules\LootRoll.lua
 Modules\ActionBars.lua
 Modules\Minimap.lua
 Modules\FastLoot.lua
+Modules\CombatIndicator.lua
 Modules\AutoVendor.lua
 Modules\DamageMeter.lua
 Modules\ObjectiveTracker.lua

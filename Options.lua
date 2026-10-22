@@ -315,8 +315,11 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
         "With auto loot on, takes every item the moment the loot window opens.",
         Setting("qol", "fastLoot"))
     Checkbox(left, "Loot roll tracker",
-        "Need/Greed/Pass show how many players chose them; hover a button to see who. After you rolled, the roll stays up until everyone has chosen.",
+        "Need/Greed/Pass show how many players chose them; hover a button to see who.",
         Setting("qol", "lootRolls", "LootRoll"))
+    Checkbox(left, "Keep roll window open until everyone's chosen",
+        "After you rolled, the window stays up until everyone has chosen instead of closing right away. Needs the tracker above.",
+        Setting("qol", "lootRollLinger", "LootRoll"))
     Checkbox(left, "Unlock loot roll window",
         "Edit Mode doesn't offer this window, so it's moved by dragging it directly while this is checked. Always off after a reload.",
         Setting("qol", "lootRollUnlocked", "LootRoll"))
@@ -344,6 +347,11 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
     Checkbox(left, "Match window size",
         "A second or third damage meter window (opened from the damage meter's own UI) starts at the same size as the first, instead of the client's default.",
         Setting("qol", "matchDamageMeterSize", "DamageMeter"))
+
+    Header(right, "Combat")
+    Checkbox(right, "Combat indicator",
+        "Flashes +COMBAT in red when you enter combat, -COMBAT in green when you leave, centered on screen.",
+        Setting("qol", "combatIndicator", "CombatIndicator"))
 
     Header(right, "Character")
     Checkbox(right, "Item rarity borders and enchants",
