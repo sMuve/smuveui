@@ -719,18 +719,12 @@ end
 
 -- Dark mode: on this client the plate's border is the health bar's background texture (it
 -- reaches out around the bar). The target highlight is darkened less, so the target stays
--- visible, and the level badge's frame is darkened too.
+-- visible. The level badge's ring (playerLevelDiffIcon) keeps its own color dimmed rather than
+-- flattened to gray - confirmed live that flattening it made both the level number AND the skull
+-- icon a way-higher-level target shows in its place unreadable/wrong-colored. Same treatment as
+-- the elite portrait ring on the target/focus frame (Modules\DarkMode.lua).
 local TARGET_HIGHLIGHT_OFFSET = 0.5
-
-local function DarkenTextures(frame, offset, depth)
-    if not frame or depth > 2 or not Accessible(frame) then
-        return
-    end
-    S:DarkenRegions(frame, offset)
-    for _, child in ipairs({ frame:GetChildren() }) do
-        DarkenTextures(child, offset, depth + 1)
-    end
-end
+local LEVEL_DIFF_OFFSET = 0.2
 
 local function DarkenBorder(frame)
     local healthBar = frame.HealthBarsContainer and frame.HealthBarsContainer.healthBar
@@ -739,8 +733,8 @@ local function DarkenBorder(frame)
         S:Darken(healthBar.selectedBorder, TARGET_HIGHLIGHT_OFFSET)
     end
     local level = frame.PlayerLevelDiffFrame
-    if level then
-        DarkenTextures(level, nil, 0)
+    if level and Accessible(level) and level.playerLevelDiffIcon then
+        S:Darken(level.playerLevelDiffIcon, LEVEL_DIFF_OFFSET, nil, true)
     end
 end
 

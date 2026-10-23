@@ -360,6 +360,9 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
     Checkbox(right, "Item level on equipped items",
         "Shows each equipped item's level in its bottom corner, in its rarity color.",
         Setting("qol", "itemLevel", "Character"))
+    Checkbox(right, "Skip typing \"DELETE\" for valuable items",
+        "Deleting a rare quality item or better normally requires typing \"DELETE\" into the confirmation popup before you can confirm. With this on, a plain click on Confirm is enough.",
+        Setting("qol", "skipDeleteConfirmText", "ItemDelete"))
 
     Header(right, "Chat")
     local chatAvailable = S.modules.Chat:IsAvailable()

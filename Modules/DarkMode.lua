@@ -529,6 +529,15 @@ local function SkinFrame(frame, depth)
     if type(nineSlice) == "table" and nineSlice.GetObjectType and nineSlice:GetObjectType() == "Frame" then
         S:DarkenRegions(nineSlice, NINESLICE_OFFSET)
     end
+    -- StaticPopup/GameDialog-based windows (confirm popups, ready checks, ...) carry their actual
+    -- border/background art as BG.Top/BG.Bottom (GameDialogBaseMixin:OnLoad, SetAtlas directly -
+    -- not one of TEXTURE_KEYS' named pieces, and not caught by the region-name scan below either,
+    -- confirmed live the delete-item confirmation's bronze border never got touched by either).
+    local bg = frame.BG
+    if type(bg) == "table" and bg.GetObjectType and bg:GetObjectType() == "Frame" then
+        S:Darken(bg.Top)
+        S:Darken(bg.Bottom)
+    end
     for _, key in ipairs(TEXTURE_KEYS) do
         S:Darken(frame[key])
     end

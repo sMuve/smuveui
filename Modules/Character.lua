@@ -515,15 +515,18 @@ function M:Init()
     -- ContainerFrameItemButton_Update doesn't exist as a global on this client (confirmed live
     -- via /smuve dump), so bag/bank buttons never got refreshed when their contents actually
     -- changed - only on whatever single occasion the character frame's own events happened to
-    -- fire. BAG_UPDATE/BAG_UPDATE_DELAYED catch moving, looting and opening bags; the ticker is a
-    -- safety net for anything that changes a shown button without firing either (same reasoning
-    -- as the one in Auras.lua).
+    -- fire. BAG_UPDATE_DELAYED catches moving, looting and opening bags; the ticker is a safety
+    -- net for anything that changes a shown button without firing it (same reasoning as the one
+    -- in Auras.lua). Deliberately not BAG_UPDATE itself - confirmed live it fires mid-batch while
+    -- bags are still settling (most visibly right after a /reload or login), so reading container
+    -- info from it briefly showed an item level note on slots that render empty a moment later.
+    -- BAG_UPDATE_DELAYED is Blizzard's own "the dust has settled, container info is consistent
+    -- now" signal for exactly this.
     if ContainerFrameItemButton_Update then
         hooksecurefunc("ContainerFrameItemButton_Update", function(button)
             S.SafeCall(UpdateBagButton, button)
         end)
     end
-    S:On("BAG_UPDATE", function() M:UpdateBags() end)
     S:On("BAG_UPDATE_DELAYED", function() M:UpdateBags() end)
     C_Timer.NewTicker(2, function() M:UpdateBags() end)
     if CharacterFrame then

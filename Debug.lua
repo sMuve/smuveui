@@ -10,6 +10,18 @@ local function Safe(value)
     return value
 end
 
+-- Always-on (not just while dumping) so a popup that was shown and dismissed before the next
+-- /smuve dump still shows up - e.g. the item-delete confirmation, which only stays up for a
+-- moment. Keeps the last 10.
+local recentPopups = {}
+hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2)
+    table.insert(recentPopups, 1, string.format("%s | arg1=%s | arg2=%s", tostring(which),
+        tostring(Safe(text_arg1)), tostring(Safe(text_arg2))))
+    for i = #recentPopups, 11, -1 do
+        table.remove(recentPopups, i)
+    end
+end)
+
 local function NameOf(region)
     if not region then
         return "nil"
@@ -148,6 +160,14 @@ function S:Dump()
         character = (UnitName("player") or "?") .. "-" .. (GetRealmName() or "?"),
         build = table.concat({ GetBuildInfo() }, " "),
     }
+
+    debug.staticPopups = {}
+    for _, line in ipairs(recentPopups) do
+        table.insert(debug.staticPopups, line)
+    end
+    if #debug.staticPopups == 0 then
+        table.insert(debug.staticPopups, "none shown yet this session")
+    end
 
     -- Whether Build() itself errors right now for either unit - SafeBuild only ever reports its
     -- FIRST error for the whole session, so a later real error could be going completely silent.
