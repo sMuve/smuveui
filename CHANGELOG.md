@@ -2,6 +2,16 @@
 
 All notable changes to this addon are documented here.
 
+## 0.2.3 - 2026-10-23
+- New: an optional QoL setting to skip typing "DELETE" when destroying a rare quality item or
+  better - a plain click on Confirm is enough.
+- Dark mode now also darkens the border on confirmation popups (item deletion, ready checks,
+  resurrect prompts, and similar), which it was missing before.
+- Fixed nameplates: the level badge next to the health bar, including the skull icon for a target
+  far above your level, no longer turns gray in dark mode.
+- Fixed the equipped item level note briefly showing on empty bag slots for a second or two after
+  a reload or login.
+
 ## 0.2.2 - 2026-10-23
 - New: an optional +COMBAT/-COMBAT flash in the center of the screen when you enter or leave
   combat (Options -> QoL -> Combat).
