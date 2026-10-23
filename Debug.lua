@@ -50,9 +50,18 @@ local function Points(region)
         return "<secret point count>"
     end
     for i = 1, count do
-        local point, relativeTo, relativePoint, x, y = region:GetPoint(i)
-        table.insert(points, string.format("%s>%s:%s(%.1f,%.1f)", tostring(Safe(point)), NameOf(relativeTo),
-            tostring(Safe(relativePoint)), tonumber(Safe(x)) or 0, tonumber(Safe(y)) or 0))
+        -- GetPoint() itself can throw outright ("Can't measure restricted regions") on some
+        -- nameplate elements rather than just degrading to secret values - confirmed live on
+        -- PlayerLevelDiffFrame/ClassificationFrame's own regions, where that uncaught error
+        -- previously took down Describe()'s entire line for them (name, size, color and all,
+        -- since Walk only pcalls the whole Describe call, not this loop specifically).
+        local ok, point, relativeTo, relativePoint, x, y = pcall(region.GetPoint, region, i)
+        if ok then
+            table.insert(points, string.format("%s>%s:%s(%.1f,%.1f)", tostring(Safe(point)), NameOf(relativeTo),
+                tostring(Safe(relativePoint)), tonumber(Safe(x)) or 0, tonumber(Safe(y)) or 0))
+        else
+            table.insert(points, "<restricted>")
+        end
     end
     return table.concat(points, " ")
 end
@@ -313,6 +322,23 @@ function S:Dump()
         end
     else
         table.insert(debug.nameplateUnit, "no target")
+    end
+
+    -- Full region/child walk of the level badge and classification icon specifically - to find
+    -- whatever draws the bright yellow "this is your target" border around the level badge, which
+    -- isn't playerLevelDiffIcon itself (confirmed live that one's already darkened correctly).
+    debug.nameplateLevelBadge = {}
+    if plate and plate.UnitFrame then
+        local level = plate.UnitFrame.PlayerLevelDiffFrame
+        if level then
+            table.insert(debug.nameplateLevelBadge, "== PlayerLevelDiffFrame")
+            Walk(level, 0, 4, debug.nameplateLevelBadge)
+        end
+        local classification = plate.UnitFrame.ClassificationFrame
+        if classification then
+            table.insert(debug.nameplateLevelBadge, "== ClassificationFrame")
+            Walk(classification, 0, 4, debug.nameplateLevelBadge)
+        end
     end
     debug.api = {}
     local function Keys(label, source)

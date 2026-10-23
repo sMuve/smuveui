@@ -735,6 +735,14 @@ local function DarkenBorder(frame)
     local level = frame.PlayerLevelDiffFrame
     if level and Accessible(level) and level.playerLevelDiffIcon then
         S:Darken(level.playerLevelDiffIcon, LEVEL_DIFF_OFFSET, nil, true)
+        -- The level badge's own "this is your target" border (selectedBorder, separate from
+        -- playerLevelDiffIcon) was never darkened at all - confirmed live via /smuve dump it was
+        -- still full white/native brightness while the health bar's own selectedBorder right next
+        -- to it was already dimmed, which is exactly the mismatch this fixes: same treatment as
+        -- that one, not the hue-preserving one playerLevelDiffIcon gets above.
+        if level.selectedBorder then
+            S:Darken(level.selectedBorder, TARGET_HIGHLIGHT_OFFSET)
+        end
     end
 end
 
