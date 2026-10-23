@@ -2,6 +2,11 @@
 
 All notable changes to this addon are documented here.
 
+## 0.2.5 - 2026-10-23
+- New: an optional sound when you receive a whisper (Options -> QoL -> Chat), off by default,
+  with a choice of several built-in sounds plus a bundled custom one.
+- Fixed the options dropdown control running past its column's edge on pages with two columns.
+
 ## 0.2.4 - 2026-10-23
 - Fixed nameplates: the level badge's own target-selection border now darkens along with the
   health bar's, instead of staying at full brightness.
