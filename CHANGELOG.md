@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.2.4 - 2026-10-23
+- Fixed nameplates: the level badge's own target-selection border now darkens along with the
+  health bar's, instead of staying at full brightness.
+
 ## 0.2.3 - 2026-10-23
 - New: an optional QoL setting to skip typing "DELETE" when destroying a rare quality item or
   better - a plain click on Confirm is enough.
