@@ -211,13 +211,22 @@ local function Dropdown(layout, text, tooltip, getOptions, get, set)
     local row = NextRow(layout, 30)
     local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("LEFT", 4, 0)
-    label:SetWidth(200)
+    -- The default 200+250 is sized for a full-width row; inside a narrower column (Columns()) it
+    -- ran past the column's own right edge instead of the panel's - confirmed live in the QoL
+    -- page's two-column Chat section. Scaled down to fit layout.width when the row has one.
+    local labelWidth, dropdownWidth = 200, 250
+    if layout.width then
+        local available = layout.width - 4 - 10
+        labelWidth = math.min(labelWidth, math.floor(available * 0.4))
+        dropdownWidth = math.max(100, available - labelWidth)
+    end
+    label:SetWidth(labelWidth)
     label:SetJustifyH("LEFT")
     label:SetText(text)
 
     local dropdown = CreateFrame("DropdownButton", nil, row, "WowStyle1DropdownTemplate")
     dropdown:SetPoint("LEFT", label, "RIGHT", 10, 0)
-    dropdown:SetWidth(250)
+    dropdown:SetWidth(dropdownWidth)
     dropdown:SetupMenu(function(_, root)
         root:SetScrollMode(400)
         for _, option in ipairs(getOptions()) do
@@ -378,6 +387,14 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
     local outlineRow = Checkbox(right, "Outline",
         "Outlines the text in every chat window.",
         Setting("qol", "chatOutline", "Chat"))
+    Checkbox(right, "Sound on whisper",
+        "Plays a sound whenever you receive a whisper.",
+        Setting("qol", "whisperSound", "WhisperSound"))
+    Dropdown(right, "Whisper sound",
+        "Which sound plays.",
+        function() return S.modules.WhisperSound.SOUNDS end,
+        function() return S.db.qol.whisperSoundKit end,
+        function(value) S.db.qol.whisperSoundKit = value end)
     local _, saveButton = Button(right, "Share this chat now",
         "Stores the current chat tabs as the shared layout right away, instead of at logout.",
         function()

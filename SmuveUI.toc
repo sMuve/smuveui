@@ -27,6 +27,7 @@ Modules\Minimap.lua
 Modules\FastLoot.lua
 Modules\CombatIndicator.lua
 Modules\ItemDelete.lua
+Modules\WhisperSound.lua
 Modules\AutoVendor.lua
 Modules\DamageMeter.lua
 Modules\ObjectiveTracker.lua
