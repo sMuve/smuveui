@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.3.0 - 2026-10-25
+- New: an optional QoL setting to always show the glowing loot sparkle on quest items, instead of
+  only with the right graphics option or the interact key held (Options -> QoL -> Quests).
+
 ## 0.2.5 - 2026-10-23
 - New: an optional sound when you receive a whisper (Options -> QoL -> Chat), off by default,
   with a choice of several built-in sounds plus a bundled custom one.
