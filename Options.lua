@@ -351,6 +351,9 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
     local guide = S.modules.ObjectiveTracker:GetDetected()
     Note(left, guide and ("Detected quest guide: |cffffffff" .. guide .. "|r")
         or "No quest guide detected, so the tracker stays visible.")
+    Checkbox(left, "Always show quest loot sparkle",
+        "The glowing outline on quest items normally only shows with the right graphics option or interact key held. This keeps it on all the time.",
+        Setting("qol", "questSparkle", "QuestSparkle"))
 
     Header(left, "Damage Meter")
     Checkbox(left, "Match window size",

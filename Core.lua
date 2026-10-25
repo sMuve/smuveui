@@ -41,6 +41,7 @@ S.defaults = {
         autoSellJunk = false,     -- sells poor-quality items the moment a vendor window opens
         autoRepair = false,       -- repairs all equipped gear the moment a vendor window opens
         hideObjectiveTracker = false,  -- only acts while RestedXP, Journey or Polestar is loaded
+        questSparkle = false,    -- always shows the client's loot-glow outline on quest items
         matchDamageMeterSize = true,   -- a new damage meter window matches the first one's size
         skipDeleteConfirmText = false, -- a plain click deletes rare+ items, no typing "DELETE"
         combatIndicator = false,  -- +COMBAT/-COMBAT flashed center screen entering/leaving combat
