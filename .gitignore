@@ -2,3 +2,7 @@
 Thumbs.db
 .vscode/
 *.tmp
+.claude/
+.specify/
+specs/
+
