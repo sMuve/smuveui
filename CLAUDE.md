@@ -22,14 +22,24 @@ release", "release version X.Y.Z"), carry out these steps:
    irrelevant to CurseForge users. The changelog must be written **in English** (CurseForge
    audience).
 
-4. **Commit**: commit message `Release <version>`, containing the `.toc` and `CHANGELOG.md`
+4. **Review `CURSEFORGE_DESCRIPTION.md`**: this file (gitignored, local only) is the CurseForge
+   project description page. Check whether any changes since the last review add a feature,
+   option, or behavior that a CurseForge visitor would care about, and if so update the relevant
+   bullet or add a new one. Phrase additions the same way as the rest of the file: plain,
+   non-technical, user-facing language - no mention of internal module/file names, commit
+   messages, or implementation details. Skip purely internal changes (refactors, bug fixes that
+   just restore intended behavior, dev tooling). Show the user the diff and get confirmation, then
+   remind them to paste the updated text into the CurseForge project page manually (it isn't
+   uploaded by the pipeline).
+
+5. **Commit**: commit message `Release <version>`, containing the `.toc` and `CHANGELOG.md`
    changes.
 
-5. **Tag**: create an annotated git tag exactly matching the version number, **without a "v"
+6. **Tag**: create an annotated git tag exactly matching the version number, **without a "v"
    prefix** (e.g. `0.2.0`) - this tag is passed 1:1 as `project-version` to the CurseForge
    pipeline (BigWigsMods/packager).
 
-6. **Mandatory checklist before every push**: never push without checking this first:
+7. **Mandatory checklist before every push**: never push without checking this first:
    - Has the version in `SmuveUI.toc` actually been bumped since the last tag? If not, do that
      first (step 2) - never push with an unchanged version.
    - Show the user the new `CHANGELOG.md` section and wait for their explicit confirmation
