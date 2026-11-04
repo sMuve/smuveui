@@ -1,3 +1,25 @@
+# Reference Addons
+
+SmuveUI targets "WoW Forever," an official Blizzard WoW client/version that adds its own non-stock
+APIs/enums beyond retail or classic Blizzard's. When a stock Blizzard API seems to silently fail or
+not expose something the default UI clearly does, don't conclude it's impossible from that alone -
+check how one of these known-working addons for this same client solves the identical problem
+first, by reading its source directly (`gh api repos/<owner>/<repo>/contents/<path>` + base64
+decode, or `WebFetch` on the raw file):
+
+- **EllesmereUI** - <https://github.com/EllesmereGaming/EllesmereUI>
+- **BetterBlizzPlates** - <https://github.com/Bodify/BetterBlizzPlates> (its `forever/` build;
+  nameplate-focused)
+- **BetterBlizzFrames** - <https://github.com/Bodify/BetterBlizzFrames> (same author as
+  BetterBlizzPlates, unit-frame-focused)
+- **muleyoUI** - <https://github.com/muleyo/muleyoUI>
+- **mini-auras** - <https://github.com/Verubato/mini-auras>
+
+Confirmed precedent: weapon imbues looked unreachable through every stock-equivalent API
+(`GetWeaponEnchantInfo()`, `C_PaperDollInfo.GetTemporaryEnchantmentInfo`, `C_UnitAuras`
+enumeration) until EllesmereUI's source showed the real answer was a WoW-Forever-specific enum
+(`Enum.ItemEnchantType.Imbue`) read through a different API (`C_Item.GetWeaponEnchantInfo`).
+
 # Release Process
 
 When the user says they're ready for a release (e.g. "ready for a release", "let's prepare a
