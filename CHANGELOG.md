@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.4.0 - 2026-11-05
+- New: a reskin for RestedXP (RXPGuides) that matches SmuveUI's own dark look and font. Enable it from inside RestedXP itself: Settings -> Appearance -> Theme -> "SmuveUI".
+- New: Dark Mode can now tint the UI with your class color instead of gray/black. Options -> Appearance -> Color mode, with its own separate intensity slider.
+
 ## 0.3.2 - 2026-11-05
 - "Name only mode" on nameplates now also applies to friendly NPCs (not just friendly players): their health bar, cast bar, buffs/debuffs and level badge hide correctly, and their name is colored the same way the health bar already was instead of staying plain white.
 - Fixed a rare case where a nameplate's health bar could get stuck permanently invisible, most noticeably right as combat started.
