@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.4.1 - 2026-11-05
+- Fixed the default quest tracker briefly flashing back into view every time a tracked objective updated while "hide the default quest tracker" was enabled, instead of staying hidden.
+
 ## 0.4.0 - 2026-11-05
 - New: a reskin for RestedXP (RXPGuides) that matches SmuveUI's own dark look and font. Enable it from inside RestedXP itself: Settings -> Appearance -> Theme -> "SmuveUI".
 - New: Dark Mode can now tint the UI with your class color instead of gray/black. Options -> Appearance -> Color mode, with its own separate intensity slider.
