@@ -552,7 +552,7 @@ CATEGORIES[7] = { key = "focus", title = "Focus", indent = true, build = functio
     AuraSettings(layout, "focus", "focus")
 end }
 
-CATEGORIES[9] = { key = "tooltip", title = "Tooltip", build = function(layout)
+CATEGORIES[8] = { key = "tooltip", title = "Tooltip", build = function(layout)
     Header(layout, "Tooltip")
     Checkbox(layout, "Dark tooltips",
         "Tooltips get a near black background and a darkened border.",
@@ -565,13 +565,14 @@ CATEGORIES[9] = { key = "tooltip", title = "Tooltip", build = function(layout)
         Setting("tooltip", "classColorClass"))
 end }
 
-CATEGORIES[10] = { key = "nameplates", title = "Nameplates", build = function(layout)
+CATEGORIES[9] = { key = "nameplates", title = "Nameplates", build = function(layout)
     local function NP(key)
         return Setting("nameplates", key, "Nameplates")
     end
     Header(layout, "Friendly Nameplates")
     Checkbox(layout, "Name only mode", "Hides the health bar, cast bar and buffs/debuffs on friendly nameplates, leaving just the name.", NP("friendlyNameOnly"))
     Checkbox(layout, "Class colored", "Friendly nameplate names are shown in their class color (players only).", NP("friendlyClassColor"))
+    Checkbox(layout, "Hide pets/totems", "Hides nameplates for friendly players' pets and totems (e.g. a hunter's pet).", NP("hideFriendlyPets"))
 
     Header(layout, "Enemy Nameplates")
     if not S.modules.Nameplates:IsSupported() then
@@ -640,25 +641,7 @@ CATEGORIES[10] = { key = "nameplates", title = "Nameplates", build = function(la
     Slider(layout, "Y offset", "Moves them down (negative) or up.", -40, 40, 1, NP("ccY"))
 end }
 
-CATEGORIES[8] = { key = "partyframes", title = "Party Frames", build = function(layout)
-    local function PF(key)
-        return Setting("partyFrames", key, "PartyFrames")
-    end
-    Header(layout, "Party Frames")
-    if not S.modules.PartyFrames:IsSupported() then
-        Note(layout, "This client doesn't offer the aura containers these need, so they are inactive.")
-    end
-    Note(layout, "The default (raid-style) party frames don't show buffs on this client, so this draws them itself: each member's own buffs in the top-right corner, and - separately - their current crowd control (first) or an important buff (a big defensive, an externally applied one, or another important buff) centered on the frame.")
-    Checkbox(layout, "Enable", "Turns both displays on for every party member frame.", PF("enabled"))
-    Header(layout, "Buffs (top-right)")
-    Slider(layout, "Icon size", "Size of the unit's own buff icons.", 6, 30, 1, PF("buffSize"))
-    Slider(layout, "Maximum", "How many buffs can be shown at once.", 1, 6, 1, PF("buffMax"))
-    Header(layout, "Crowd control / important buffs (centered)")
-    Slider(layout, "Icon size", "Size of the crowd control / important buff icons.", 6, 30, 1, PF("ccSize"))
-    Slider(layout, "Maximum", "How many of these can be shown at once.", 1, 3, 1, PF("ccMax"))
-end }
-
-CATEGORIES[11] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
+CATEGORIES[10] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
     Header(layout, "Minimap")
     Checkbox(layout, "Hide addon buttons",
         "Addon buttons around the minimap and the client's addon compartment are hidden; right-click the map to open them all in one box.",
@@ -691,7 +674,6 @@ local MODULE_NAMES = {
     Nameplates = { "Nameplates", "Enemy nameplate auras, name, size and test mode." },
     UnitAuras = { "Target & focus auras", "The target and focus frames' own buff and debuff rows." },
     BigDebuffs = { "Big debuffs", "A big crowd control / important buff icon over the player and target portraits." },
-    PartyFrames = { "Party frames", "Buffs and crowd control / important icons on the default party frames." },
 }
 
 StaticPopupDialogs["SMUVEUI_MODULE_RELOAD"] = {
@@ -707,7 +689,7 @@ StaticPopupDialogs["SMUVEUI_MODULE_RELOAD"] = {
     preferredIndex = 3,
 }
 
-CATEGORIES[12] = { key = "modules", title = "Modules", build = function(layout)
+CATEGORIES[11] = { key = "modules", title = "Modules", build = function(layout)
     Header(layout, "Modules")
     Note(layout, "A module that is switched off doesn't run at all. Changes take effect after a reload.")
     for _, module in ipairs(S.moduleOrder) do

@@ -91,18 +91,12 @@ S.defaults = {
         player = { enabled = true },
         target = { enabled = true },
     },
-    partyFrames = {              -- the default (raid-style) party frames' own buffs and CC/important icons
-        enabled = true,
-        buffSize = 16,           -- the unit's own buffs, top-right
-        buffMax = 3,
-        ccSize = 18,             -- crowd control first, then important buffs, centered
-        ccMax = 2,
-    },
     nameplates = {
         enabled = true,
         testMode = false,       -- always off after a reload
         friendlyNameOnly = false, -- hides the health bar and cast bar on friendly nameplates
         friendlyClassColor = false, -- friendly nameplate names in their class color (players only)
+        hideFriendlyPets = false, -- hides friendly players' pet/totem nameplates (e.g. a hunter's pet)
         nameX = 0,              -- name above the health bar, offset from its middle
         nameY = 2,
         onlyMyDebuffs = true,
@@ -480,6 +474,10 @@ S:On("ADDON_LOADED", function(_, loaded)
         return
     end
     SmuveUIDB = SmuveUIDB or {}
+    -- The party frames buff display (Modules\PartyFrames.lua) was removed entirely, so its whole
+    -- saved section goes too, not just individual keys - RemoveObsolete below only drops keys
+    -- within a section that's still in S.defaults, which this no longer is.
+    SmuveUIDB.partyFrames = nil
     -- The old "darkMode" boolean becomes the new "colorMode" string (adds a mutually exclusive
     -- class-color mode alongside it) - a one-time coercion read before RemoveObsolete below drops
     -- the old field, so anyone who had dark mode off keeps it off rather than silently gaining the

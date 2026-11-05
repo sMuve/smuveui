@@ -678,60 +678,6 @@ function S:Dump()
         end
     end
 
-    -- Which aura (if any) actually matched into each of PartyFrames' containers, per member -
-    -- same technique as debug.bigDebuffs above (button pools include many inactive entries whose
-    -- IsShown() is itself secret here, so this resolves instance IDs instead of trusting shown
-    -- state) - to see whether "too many, repetitive" icons means real duplicate matches or just
-    -- raw pooled buttons being miscounted.
-    debug.partyFrameAuras = {}
-    local pfModule = S.modules.PartyFrames
-    if pfModule and pfModule.hosts then
-        for index = 1, 5 do
-            local host = pfModule.hosts[index]
-            local frame = _G["CompactPartyFrameMember" .. index]
-            local unitName
-            if frame and frame.unit then
-                local okName, name = pcall(UnitName, frame.unit)
-                unitName = okName and Safe(name) or "error"
-            end
-            table.insert(debug.partyFrameAuras, "== Member" .. index .. " unit=" ..
-                tostring(frame and frame.unit) .. " name=" .. tostring(unitName))
-            if host then
-                for _, key in ipairs({ "buffs", "important" }) do
-                    local container = host[key]
-                    if container then
-                        local okChildren, children = pcall(function() return { container:GetChildren() } end)
-                        if okChildren then
-                            table.insert(debug.partyFrameAuras, "  " .. key .. " GetChildren count=" .. #children)
-                            for _, button in ipairs(children) do
-                                local instanceId = button.auraInstanceID
-                                if instanceId == nil and button.GetAuraInstanceID then
-                                    local okId, id = pcall(button.GetAuraInstanceID, button)
-                                    if okId then
-                                        instanceId = id
-                                    end
-                                end
-                                local shownOk, shown = pcall(button.IsShown, button)
-                                table.insert(debug.partyFrameAuras, "  -- " .. key .. " " .. NameOf(button) ..
-                                    " instanceId=" .. tostring(Safe(instanceId)) ..
-                                    " shown=" .. tostring(shownOk and Safe(shown) or "error"))
-                                if instanceId ~= nil and not S.IsSecret(instanceId) and frame and frame.unit then
-                                    local okData, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, frame.unit, instanceId)
-                                    local name = (okData and auraData and tostring(Safe(auraData.name))) or "no aura data"
-                                    table.insert(debug.partyFrameAuras, "     aura=" .. name)
-                                end
-                            end
-                        end
-                    end
-                end
-            else
-                table.insert(debug.partyFrameAuras, "  no host")
-            end
-        end
-    else
-        table.insert(debug.partyFrameAuras, "no PartyFrames.hosts")
-    end
-
     -- Player's own buff/debuff border colors (apply a debuff to yourself first, e.g. a poison or
     -- curse, to see its DebuffBorder/smuveBorder color here). Covers both our own container
     -- (Modules\Auras.lua, the one actually meant to be showing) and whatever's left of the
@@ -796,7 +742,13 @@ function S:Dump()
                 buttons = ok and children or {}
             end
             for _, button in ipairs(buttons) do
+                local okRect, left, right, top, bottom = pcall(function()
+                    return button:GetLeft(), button:GetRight(), button:GetTop(), button:GetBottom()
+                end)
                 table.insert(debug.playerAuras, "-- " .. NameOf(button) ..
+                    " rect=" .. (okRect and
+                        (tostring(Safe(left)) .. "," .. tostring(Safe(right)) .. "," ..
+                         tostring(Safe(top)) .. "," .. tostring(Safe(bottom))) or "error") ..
                     " AddDispelTypeTexture=" .. type(button.AddDispelTypeTexture) ..
                     " SetDurationText=" .. type(button.SetDurationText) ..
                     " smuveDurationFormatter=" .. tostring(button.smuveDurationFormatter) ..

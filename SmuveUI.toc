@@ -35,7 +35,6 @@ Modules\QuestSparkle.lua
 Modules\Nameplates.lua
 Modules\UnitAuras.lua
 Modules\BigDebuffs.lua
-Modules\PartyFrames.lua
 Modules\RestedXPSkin.lua
 
 Options.lua

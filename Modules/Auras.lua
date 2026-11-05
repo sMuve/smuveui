@@ -412,14 +412,14 @@ local function HideImbueCellsFrom(first)
     end
 end
 
-local lastImbueCount = 0 -- imbue cells LayoutImbues last placed, for RepositionDebuffs' x-shift
-
--- Debuffs anchors off the buffs PARENT (the fixed drag anchor), not the buffs container itself,
+-- Debuffs' Y follows the buffs PARENT (the fixed drag anchor), not the buffs container itself,
 -- with its own live height floored at MIN_BUFF_ROWS rows - so a handful of buffs don't pull
 -- debuffs up right underneath them, while a buffs area that actually grows past that floor still
--- pushes debuffs down further rather than overlapping it. Cancels out the same imbue-cell x-shift
--- LayoutImbues applies to the buffs container, so debuffs' right edge stays put regardless of how
--- many imbues are showing. Called after every LayoutImbues pass, and off a low-frequency ticker
+-- pushes debuffs down further rather than overlapping it. Debuffs' X instead follows the buffs
+-- CONTAINER's own right edge directly (a second, independent SetPoint call) rather than
+-- replicating LayoutImbues' imbue-cell x-shift by hand - that duplicated math previously left
+-- debuffs' right edge a step or so off from buffs' whenever the two disagreed, where anchoring to
+-- the real edge can't drift. Called after every LayoutImbues pass, and off a low-frequency ticker
 -- (StartDebuffsTicker, below) to also catch a plain buff count/row change with no weapon event
 -- behind it.
 local function RepositionDebuffs()
@@ -432,9 +432,9 @@ local function RepositionDebuffs()
     end
     local minHeight = MIN_BUFF_ROWS * (ICON_SIZE + SPACING) * (DB().auraBuffsScale or 1)
     local height = math.max(actual, minHeight)
-    local step = ICON_SIZE + SPACING
     containers.debuffs:ClearAllPoints()
-    containers.debuffs:SetPoint("TOPRIGHT", parents.buffs, "TOPRIGHT", lastImbueCount * step, -(height + DEBUFF_GAP))
+    containers.debuffs:SetPoint("TOP", parents.buffs, "TOP", 0, -(height + DEBUFF_GAP))
+    containers.debuffs:SetPoint("RIGHT", containers.buffs, "RIGHT")
 end
 
 -- Lays out active imbues leading the buffs container (same side the client's own weapon-enchant
@@ -466,7 +466,6 @@ local function LayoutImbues()
     containers.buffs:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -n * step, 0)
     local perRow = DB().auraBuffsPerRow or 10
     containers.buffs:SetFlowLayoutMaximumLineSize(math.max(step, perRow * step - n * step))
-    lastImbueCount = n
     RepositionDebuffs()
     return n
 end

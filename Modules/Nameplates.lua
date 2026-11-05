@@ -924,6 +924,9 @@ local function ApplyFriendlyCVars()
     for key, cvar in pairs(FRIENDLY_CVARS) do
         SetCVar(cvar, db[key] and "1" or "0")
     end
+    -- Inverted sense vs. the loop above: nameplateShowFriendlyPets is "1" by default (pets DO
+    -- show), so our own "hide them" checkbox means setting it to "0", not "1".
+    SetCVar("nameplateShowFriendlyPets", db.hideFriendlyPets and "0" or "1")
 end
 
 -- Friendly NPCs have no CVar equivalent to the one above - confirmed live that calling into the
