@@ -170,6 +170,25 @@ function S:Dump()
         build = table.concat({ GetBuildInfo() }, " "),
     }
 
+    -- Class color mode: the raw settings plus what the color math actually computes right now, to
+    -- tell a settings-not-applying bug apart from a math bug.
+    debug.appearance = {}
+    do
+        local a = S.db and S.db.appearance
+        table.insert(debug.appearance, "colorMode=" .. tostring(a and a.colorMode))
+        table.insert(debug.appearance, "darkness=" .. tostring(a and a.darkness))
+        table.insert(debug.appearance, "classColorIntensity=" .. tostring(a and a.classColorIntensity))
+        table.insert(debug.appearance, "DarkModeActive=" .. tostring(S:DarkModeActive()))
+        table.insert(debug.appearance, "ClassColorModeActive=" .. tostring(S:ClassColorModeActive()))
+        local _, class = UnitClass("player")
+        table.insert(debug.appearance, "UnitClass(player)=" .. tostring(class))
+        local c = S:GetClassColor()
+        table.insert(debug.appearance, string.format("GetClassColor=%.3f,%.3f,%.3f", c.r, c.g, c.b))
+        table.insert(debug.appearance, string.format("Shade(0)=%.3f", S:Shade(0)))
+        local r, g, b = S:ClassTint(0)
+        table.insert(debug.appearance, string.format("ClassTint(0)=%.3f,%.3f,%.3f", r, g, b))
+    end
+
     debug.staticPopups = {}
     for _, line in ipairs(recentPopups) do
         table.insert(debug.staticPopups, line)

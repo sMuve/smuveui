@@ -9,8 +9,9 @@ S.moduleOrder = {}
 
 S.defaults = {
     appearance = {
-        darkMode = true,
-        darkness = 90,          -- percent; 90 means textures keep 10% of their brightness
+        colorMode = "dark",     -- "off" | "dark" | "class": mutually exclusive, see Core.lua's Paint()
+        darkness = 90,          -- percent; 90 means textures keep 10% of their brightness (Dark mode)
+        classColorIntensity = 90, -- same, for Class color mode
         font = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf", -- "DEFAULT" keeps the client's fonts instead
         auraDurationSize = 12,
         auraBuffsPos = nil,     -- { point, x, y }; nil keeps the built-in default position. Debuffs
@@ -141,7 +142,7 @@ S.defaults = {
 local OBSOLETE = {
     actionbars = { "xpCustomSize", "xpWidth", "xpHeight" },  -- the XP bar is scaled now
     nameplates = { "nameAbove", "buffGap", "debuffMax", "buffMax", "importantSize", "ccSize", "typeBorders" }, -- always on now
-    appearance = { "biggerHealthBar", "playerNameX", "playerNameY", "targetNameX", "targetNameY" }, -- removed
+    appearance = { "biggerHealthBar", "playerNameX", "playerNameY", "targetNameX", "targetNameY", "darkMode" }, -- removed
 }
 
 local function RemoveObsolete(db)
@@ -256,13 +257,42 @@ local conditions = {} -- texture -> function deciding whether it is dark (defaul
 local keepColor = {}  -- texture -> true: dim it, but don't flatten its own baked-in color to gray
 local painting = false
 
+-- "off": neither mode. "dark": the original flat gray/black tint. "class": the same tint, but
+-- colored with the player's own class color instead of gray - mutually exclusive with "dark",
+-- picked via one dropdown (Options.lua), not two independent checkboxes.
 function S:DarkModeActive()
-    return self.db and self.db.appearance.darkMode
+    return self.db and self.db.appearance.colorMode ~= "off"
+end
+
+function S:ClassColorModeActive()
+    return self.db and self.db.appearance.colorMode == "class"
 end
 
 function S:Shade(offset)
     local base = 1 - (self.db.appearance.darkness or 90) / 100
     return math.max(0, math.min(1, base + (offset or 0)))
+end
+
+-- The player's own class color, nil-safe - WoW Forever has the same 9 classes as retail, so
+-- RAID_CLASS_COLORS always has an entry once UnitClass resolves.
+function S:GetClassColor()
+    local _, class = UnitClass("player")
+    local color = class and ((C_ClassColor and C_ClassColor.GetClassColor(class)) or RAID_CLASS_COLORS[class])
+    return color or { r = 1, g = 1, b = 1 }
+end
+
+-- Class color mode's tint: blends from the SAME dark/gray baseline Dark mode uses (Shade, so
+-- switching modes doesn't also change how dark everything looks, just whether it's gray or
+-- colored) up toward the player's full, true class color - "intensity" is purely that blend
+-- weight, never a brightness multiplier. Multiplying the class color's own RGB by a small
+-- darkness-style factor (the first version of this did) crushes it toward black exactly like
+-- plain gray does - confirmed live as "class color mode looks the same as dark mode" even on a
+-- Mage, since 10% of an already not-fully-saturated blue reads as indistinguishable near-black.
+function S:ClassTint(offset)
+    local gray = S:Shade(offset)
+    local intensity = math.max(0, math.min(1, (self.db.appearance.classColorIntensity or 90) / 100))
+    local color = S:GetClassColor()
+    return gray + (color.r - gray) * intensity, gray + (color.g - gray) * intensity, gray + (color.b - gray) * intensity
 end
 
 local function Paint(texture)
@@ -274,18 +304,25 @@ local function Paint(texture)
     local condition = conditions[texture]
     local original = originals[texture]
     if (condition and condition()) or (not condition and S:DarkModeActive()) then
+        local classMode = S:ClassColorModeActive()
         local value = S:Shade(offset)
         if keepColor[texture] then
             -- Dim the texture's own (possibly dynamic - e.g. a boss/elite atlas Blizzard tints
             -- gold vs. a plain one) color instead of flattening it to gray: OnRecolored below
             -- keeps `original` refreshed with whatever Blizzard itself last set, so this is always
-            -- dimming the real current color, never our own previous dimmed output.
+            -- dimming the real current color, never our own previous dimmed output. Unaffected by
+            -- Class color mode - this exception is about preserving a texture's OWN hue, which is
+            -- orthogonal to what the non-preserved baseline tint color is.
             texture:SetVertexColor(original.r * value, original.g * value, original.b * value)
         else
             if texture.SetDesaturated then
                 texture:SetDesaturated(true)
             end
-            texture:SetVertexColor(value, value, value)
+            if classMode then
+                texture:SetVertexColor(S:ClassTint(offset))
+            else
+                texture:SetVertexColor(value, value, value)
+            end
         end
     else
         if texture.SetDesaturated then
@@ -443,6 +480,13 @@ S:On("ADDON_LOADED", function(_, loaded)
         return
     end
     SmuveUIDB = SmuveUIDB or {}
+    -- The old "darkMode" boolean becomes the new "colorMode" string (adds a mutually exclusive
+    -- class-color mode alongside it) - a one-time coercion read before RemoveObsolete below drops
+    -- the old field, so anyone who had dark mode off keeps it off rather than silently gaining the
+    -- new default ("dark").
+    if SmuveUIDB.appearance and SmuveUIDB.appearance.colorMode == nil and SmuveUIDB.appearance.darkMode ~= nil then
+        SmuveUIDB.appearance.colorMode = SmuveUIDB.appearance.darkMode and "dark" or "off"
+    end
     RemoveObsolete(SmuveUIDB)
     -- The old default ("DEFAULT", the client's own fonts) becomes the new one (Rajdhani Bold)
     -- for anyone who never explicitly chose a font - a one-time coercion, not a standing rule,

@@ -294,12 +294,23 @@ StaticPopupDialogs["SMUVEUI_FONT_RELOAD"] = {
 
 CATEGORIES[1] = { key = "appearance", title = "Appearance", build = function(layout)
     Header(layout, "Dark Mode")
-    Checkbox(layout, "Enable dark mode",
-        "Tints the borders and frames of the default UI almost black. Textures stay the client's own.",
-        Setting("appearance", "darkMode", "DarkMode"))
+    local getColorMode, setColorMode = Setting("appearance", "colorMode", "DarkMode")
+    Dropdown(layout, "Color mode",
+        "How the default UI's borders, frames, windows, minimap and menus are tinted. Textures stay the client's own either way. Dark mode and Class color mode are mutually exclusive.",
+        function()
+            return {
+                { value = "off", text = "Off" },
+                { value = "dark", text = "Dark mode" },
+                { value = "class", text = "Class color mode" },
+            }
+        end, getColorMode, setColorMode)
     local getDarkness, setDarkness = Setting("appearance", "darkness", "DarkMode")
-    Slider(layout, "Darkness", "How dark the tinted textures get. 90% leaves them at a tenth of their brightness.",
+    Slider(layout, "Darkness (Dark mode)", "How dark the tinted textures get in Dark mode. 90% leaves them at a tenth of their brightness.",
         50, 100, 1, getDarkness, setDarkness, "%")
+    local getClassIntensity, setClassIntensity = Setting("appearance", "classColorIntensity", "DarkMode")
+    Slider(layout, "Intensity (Class color mode)",
+        "How much of your class color blends into the same dark tint Darkness controls above. 0% looks identical to Dark mode; 100% is your full, true class color.",
+        50, 100, 1, getClassIntensity, setClassIntensity, "%")
 
     Header(layout, "Fonts")
     local getFont, setFont = Setting("appearance", "font", "Fonts")
@@ -660,7 +671,7 @@ end }
 
 -- Every module can be switched off completely (the same as /smuve disable <Module>).
 local MODULE_NAMES = {
-    DarkMode = { "Dark mode", "Dark tint of the default UI's frames, windows, minimap and menus." },
+    DarkMode = { "Dark mode", "Dark or class-color tint of the default UI's frames, windows, minimap and menus." },
     Fonts = { "Global font", "The font chosen under Appearance." },
     Tooltip = { "Tooltip", "Dark tooltips and class colored names." },
     Auras = { "Player auras", "Your buffs and debuffs: black borders, duration and stacks inside the icon." },
