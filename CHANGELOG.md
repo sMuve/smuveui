@@ -2,6 +2,15 @@
 
 All notable changes to this addon are documented here.
 
+## 0.3.2 - 2026-11-05
+- "Name only mode" on nameplates now also applies to friendly NPCs (not just friendly players): their health bar, cast bar, buffs/debuffs and level badge hide correctly, and their name is colored the same way the health bar already was instead of staying plain white.
+- Fixed a rare case where a nameplate's health bar could get stuck permanently invisible, most noticeably right as combat started.
+- Fixed enemy nameplates occasionally showing both the custom and the game's own default buff/debuff icons at the same time.
+- Fixed your own buffs staying visible on the party frame after leaving a party, or after opening and closing Edit Mode, even though the party frame itself was gone.
+- Restored Dark Mode styling on the main action bar's own frame art and its gryphon end caps, and fixed it not applying to the target/focus frame's portrait ring on regular (non-elite) targets.
+- Fixed a rare issue where the target and focus frame's buffs/debuffs could trigger "secret value" errors.
+- Fixed the focus frame's in-combat glow rendering on the target frame instead of the focus frame when both a target and a focus were set.
+
 ## 0.3.1 - 2026-11-05
 - Fixed a group of rare "secret value"/"action blocked" errors that could interrupt Edit Mode, action bar layout, or party frames, caused by several of the addon's own update hooks running too deep inside the game's own protected UI code.
 - Removed the Pet Bar's custom show/hide/mouseover option, since Blizzard's own native pet-bar behavior was the direct cause of one recurring version of the error above; the game's own default behavior (hidden with no pet) now applies to it instead.
