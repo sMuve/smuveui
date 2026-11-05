@@ -15,7 +15,12 @@ M.BARS = {
     { key = "bar6", label = "Action Bar 6", frames = { "MultiBar5" }, buttons = "MultiBar5Button" },
     { key = "bar7", label = "Action Bar 7", frames = { "MultiBar6" }, buttons = "MultiBar6Button" },
     { key = "bar8", label = "Action Bar 8", frames = { "MultiBar7" }, buttons = "MultiBar7Button" },
-    { key = "pet", label = "Pet Bar", frames = { "PetActionBar" }, buttons = "PetActionButton" },
+    -- No Pet Bar entry: it's the one bar Blizzard itself natively shows/hides live (pet summon/
+    -- dismiss), which repeatedly put our own alpha/mouse management of it in the same update pass
+    -- as Blizzard's own PetActionBar:Update()/Hide() - confirmed live, after several narrower fixes,
+    -- as a recurring (if by then rare) ADDON_ACTION_BLOCKED on MainActionBar:SetPointBase() when
+    -- Edit Mode reflowed the bars below it in that same pass. Blizzard's own default pet-bar
+    -- visibility (hidden with no pet) stands in for the custom mode this bar used to offer.
     { key = "stance", label = "Stance Bar", frames = { "StanceBar" }, buttons = "StanceButton" },
     { key = "micro", label = "Menu Bar", frames = { "MicroMenuContainer", "MicroMenu" } },
     { key = "bags", label = "Bag Bar", frames = { "BagsBar" } },
@@ -50,6 +55,32 @@ local function ForceShown()
         or (SpellFlyout and SpellFlyout:IsShown())
 end
 
+-- Deferred a tick: this runs off our own OnUpdate watcher, not a Blizzard call, but WoW batches
+-- every frame's OnUpdate/OnEvent scripts for a given render tick into one execution pass - so an
+-- EnableMouse call here can still land in the very same pass as the client's own, e.g. PetActionBar
+-- deciding to Hide() itself (pet dismissed) and having Edit Mode reflow MainActionBar under it.
+-- Confirmed live: that reflow's SetPoint on MainActionBar then hits ADDON_ACTION_BLOCKED, tainted
+-- by this call having landed in the same pass. One tick later is a different pass.
+local function ApplyMouse(bar, enabled)
+    if bar.buttons then
+        for i = 1, 12 do
+            local button = _G[bar.buttons .. i]
+            if button then
+                button:EnableMouse(enabled)
+            end
+        end
+    else
+        local frame = FrameOf(bar)
+        if frame then
+            for _, child in ipairs({ frame:GetChildren() }) do
+                if not child:IsForbidden() and child:IsObjectType("Button") then
+                    child:EnableMouse(enabled)
+                end
+            end
+        end
+    end
+end
+
 local function SetMouse(bar, frame, enabled)
     if bar.mouseEnabled == enabled then
         return
@@ -60,20 +91,9 @@ local function SetMouse(bar, frame, enabled)
         return
     end
     bar.mouseEnabled = enabled
-    if bar.buttons then
-        for i = 1, 12 do
-            local button = _G[bar.buttons .. i]
-            if button then
-                button:EnableMouse(enabled)
-            end
-        end
-    else
-        for _, child in ipairs({ frame:GetChildren() }) do
-            if not child:IsForbidden() and child:IsObjectType("Button") then
-                child:EnableMouse(enabled)
-            end
-        end
-    end
+    C_Timer.After(0, function()
+        ApplyMouse(bar, enabled)
+    end)
 end
 
 -- Cooldown spirals "bling" even on invisible bars; that is switched off while a bar is hidden.

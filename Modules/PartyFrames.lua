@@ -56,8 +56,15 @@ local function MemberFrame(index)
 end
 
 -- groups: list of { key, filter, max, size, helpful, candidateFilters }
+-- Parented to UIParent, never to the member frame itself - same as the nameplate and player/
+-- target/focus aura containers (Modules\Nameplates.lua, Modules\Auras.lua, Modules\UnitAuras.lua).
+-- A container parented directly to a protected CompactUnitFrame and bound to it with SetUnit
+-- (confirmed live) leaves that frame persistently tainted for every later secret-value read
+-- Blizzard's own code does on it (health, heal prediction, range) - not just for the call that
+-- parented it, but for as long as the session lasts. Position still tracks the member frame below,
+-- via SetPoint/SetFrameStrata/SetFrameLevel (reading it, never writing to it).
 local function CreateContainer(frame, groups, flowPoint, horizontal, vertical)
-    local container = CreateFrame("AuraContainer", nil, frame, "CustomAuraContainerTemplate")
+    local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
     container:SetEnabled(false)
     container:Hide()
     if container.SetFlattensRenderLayers then
@@ -190,17 +197,17 @@ function M:Init()
     if not Supported() then
         return
     end
-    -- Catches a roster change the moment Blizzard reassigns a member frame's unit, rather than
-    -- waiting for the group event below.
-    if CompactUnitFrame_SetUnit then
-        hooksecurefunc("CompactUnitFrame_SetUnit", function(frame)
-            local name = frame and frame.GetName and frame:GetName()
-            local index = name and name:match("^CompactPartyFrameMember(%d+)$")
-            if index then
-                pcall(Bind, tonumber(index))
-            end
-        end)
-    end
+    -- No hooksecurefunc on CompactUnitFrame_SetUnit any more - confirmed live that even a deferred,
+    -- near-empty hook is unsafe here, the same lesson Modules\ActionBars.lua hit with per-button
+    -- Update hooks. CompactUnitFrame_SetUnit is the shared function behind every CompactUnitFrame on
+    -- screen, nameplates included, so it fires constantly; Blizzard dispatches those calls in
+    -- batches, and hooksecurefunc still runs our function as part of whatever batch is live - even
+    -- one that just pattern-matches the frame name and returns for every non-party frame - which
+    -- taints the rest of that batch. That's what kept surfacing as "secret value" errors in
+    -- Blizzard's own CompactUnitFrame code (heal prediction, health color, range) long after Bind()
+    -- itself had been deferred and its container moved off the protected frame. Binding now goes
+    -- through GROUP_ROSTER_UPDATE/PLAYER_ENTERING_WORLD only, below - both already deferred, and
+    -- neither is a hook into a function Blizzard calls as part of its own per-frame dispatch.
     S:On("GROUP_ROSTER_UPDATE", function()
         C_Timer.After(0, BindAll)
     end)

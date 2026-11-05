@@ -60,20 +60,23 @@ local function Color(button)
     icon:SetVertexColor(color[1], color[2], color[3])
 end
 
+-- No hooksecurefunc on button.Update/UpdateUsable (and none on the legacy global
+-- ActionButton_UpdateUsable either) - confirmed live that this is unsafe at any deferral, not just
+-- un-deferred. Blizzard dispatches a cooldown/usability event to every registered action-type
+-- button (ours AND the vehicle/override/pet/extra ones) in one sweep via each button's own
+-- OnEvent; hooksecurefunc still runs our function as part of that same sweep even when all it does
+-- is schedule a timer, and one addon function call anywhere in the sweep taints the rest of it.
+-- That surfaced as Blizzard's own ActionButton_UpdateCooldown hitting "Secret values are only
+-- allowed during untainted execution" trying to SetCooldown an OverrideActionBarButton later in the
+-- same sweep - happening on OUR bars' buttons was enough, we don't have to be hooking the override
+-- bar itself. EllesmereUI's action bar module documents the identical failure mode from registering
+-- into this same dispatch and says it should never be done on WoW Forever. Updates are driven
+-- purely by the events/ticker in Init below instead, none of which run inside that dispatch.
 local function HookButton(button)
     if not button or buttons[button] then
         return
     end
     buttons[button] = true
-    if type(button.UpdateUsable) == "function" then
-        hooksecurefunc(button, "UpdateUsable", Color)
-    end
-    if type(button.Update) == "function" then
-        hooksecurefunc(button, "Update", function(self)
-            EnableRangeCheck(self)
-            Color(self)
-        end)
-    end
     EnableRangeCheck(button)
 end
 
@@ -91,22 +94,12 @@ function M:Init()
             HookButton(_G[prefix .. i])
         end
     end
-    if ActionBarButtonEventsFrame and ActionBarButtonEventsFrame.frames then
-        for _, button in pairs(ActionBarButtonEventsFrame.frames) do
-            HookButton(button)
-        end
-    end
-    -- Older clients update usability through a global function instead of a button method.
-    if ActionButton_UpdateUsable then
-        hooksecurefunc("ActionButton_UpdateUsable", Color)
-    end
 
     pcall(S.On, S, "ACTION_RANGE_CHECK_UPDATE", function(_, slot)
         if Enabled() and not S.IsSecret(slot) then
             M:UpdateAll(slot)
         end
     end)
-    -- Usability (mana) changes arrive through the UpdateUsable hooks above.
     S:On("PLAYER_TARGET_CHANGED", function()
         if Enabled() then
             M:UpdateAll()
@@ -121,14 +114,14 @@ function M:Init()
         end)
     end
 
-    -- Clients without range events: poll a few times a second while there is a target.
-    if not (C_ActionBar and C_ActionBar.EnableActionRangeCheck) then
-        C_Timer.NewTicker(0.2, function()
-            if Enabled() and UnitExists("target") then
-                M:UpdateAll()
-            end
-        end)
-    end
+    -- Usability (mana/unusable) has no safe per-button hook any more (see HookButton above), so
+    -- it's polled instead of caught instantly - a few times a second, regardless of client/target,
+    -- cheap enough for ~80 buttons and still reads as live.
+    C_Timer.NewTicker(0.2, function()
+        if Enabled() then
+            M:UpdateAll()
+        end
+    end)
 end
 
 function M:Refresh()

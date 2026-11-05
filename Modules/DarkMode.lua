@@ -167,10 +167,18 @@ end
 
 -- Action bars, micro menu, bags, XP/rep bars -----------------------------------------------------
 
+-- PetActionButton/StanceButton/BonusActionButton deliberately excluded - same reasoning
+-- Modules\ActionBars.lua's own BARS list already uses. S:Darken installs a permanent
+-- hooksecurefunc(texture, "SetVertexColor"/"SetDesaturated", ...) on every texture it touches
+-- (Core.lua), so darkening these buttons' art means that hook fires every time the client
+-- recolors/desaturates them for its own reasons - which for the pet bar specifically happens as
+-- part of its own per-button Update(), the same call that can go on to Hide() the bar (no pet) and
+-- have Edit Mode reflow MainActionBar under it. Confirmed live as the same ADDON_ACTION_BLOCKED on
+-- MainActionBar:SetPointBase() that Modules\ActionBars.lua's and Modules\BarVisibility.lua's own
+-- pet-bar hooks were already fixed for - this was the one actually still causing it.
 local BUTTON_BARS = {
     "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton",
     "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button",
-    "PetActionButton", "StanceButton", "BonusActionButton",
 }
 
 local MICRO_BUTTONS = {
@@ -214,34 +222,20 @@ local function DarkenActionBars()
         end
     end
 
-    local mainBar = _G.MainActionBar or _G.MainMenuBar
-    if mainBar then
-        DarkenEdges(mainBar)
-        for _, child in ipairs({ mainBar:GetChildren() }) do
-            DarkenEdges(child)
-        end
-        -- The gryphons are either textures themselves or frames holding a .Texture.
-        local endCaps = mainBar.EndCaps
-        if endCaps then
-            for _, cap in ipairs({ endCaps.LeftEndCap or false, endCaps.RightEndCap or false }) do
-                if cap then
-                    S:Darken(cap, LIGHTER)
-                    S:Darken(cap.Texture, LIGHTER)
-                end
-            end
-        end
-    end
-
-    -- Classic style main bar art
+    -- MainActionBar itself (its edges, every child via GetChildren, end caps) and the classic-style
+    -- bar's own end caps are deliberately NOT darkened directly, for the same reason PetActionButton
+    -- etc. were dropped from BUTTON_BARS above: Blizzard recolors this whole hierarchy's art as part
+    -- of vehicle-state transitions (which also hide the pet bar and populate the override bar), and
+    -- a permanent SetVertexColor/SetDesaturated hook anywhere in it taints that entire transition -
+    -- confirmed live as the pet-bar MainActionBar reflow block and the override bar's secret-cooldown
+    -- block showing up together, every time, from this one source. MainMenuBarTexture/XP/Reputation
+    -- bar textures are a separate, non-action-bar hierarchy (StatusTrackingBarManager's) and stay.
     for i = 0, 3 do
-        S:Darken(_G["MainMenuBarTexture" .. i])
         S:Darken(_G["MainMenuMaxLevelBar" .. i])
         S:Darken(_G["MainMenuXPBarTexture" .. i])
         S:Darken(_G["ReputationWatchBarTexture" .. i])
         S:Darken(_G["ReputationXPBarTexture" .. i])
     end
-    S:Darken(_G.MainMenuBarLeftEndCap, LIGHTER)
-    S:Darken(_G.MainMenuBarRightEndCap, LIGHTER)
 
     if StatusTrackingBarManager then
         S:Darken(S.Resolve("StatusTrackingBarManager.MainStatusTrackingBarContainer.BarFrameTexture"))
