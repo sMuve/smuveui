@@ -2,6 +2,11 @@
 
 All notable changes to this addon are documented here.
 
+## 0.4.2 - 2026-11-05
+- New: an optional nameplate setting to hide friendly players' pets and totems (Options -> Nameplates -> Friendly Nameplates -> "Hide pets/totems").
+- Fixed your own debuffs bar not lining up with the right edge of your buffs bar.
+- Removed the custom buff display on the default party frames. Recent changes to how this client resolves party members' aura data made it unreliable (missing icon borders, duplicated icons), so it's been removed rather than left half-working - party frames now show just health and name, same as before this feature existed.
+
 ## 0.4.1 - 2026-11-05
 - Fixed the default quest tracker briefly flashing back into view every time a tracked objective updated while "hide the default quest tracker" was enabled, instead of staying hidden.
 
