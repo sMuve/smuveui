@@ -50,20 +50,13 @@ local function KeepHidden(tracker)
     if not ShouldHide() then
         return
     end
-    -- The tracker can hold secure quest item buttons, so it can't be hidden during combat.
-    if InCombatLockdown() then
-        M.pending = true
-        return
-    end
-    tracker:Hide()
+    -- SetAlpha instead of Hide(): the tracker can hold secure quest item buttons, and Hide()ing
+    -- it is blocked during combat lockdown - which previously let it flash fully visible for a
+    -- moment every time a tracked objective updated mid-combat before the hide could land.
+    tracker:SetAlpha(0)
 end
 
 function M:Apply()
-    if InCombatLockdown() then
-        self.pending = true
-        return
-    end
-    self.pending = false
     for _, name in ipairs(TRACKERS) do
         local tracker = _G[name]
         if tracker and not tracker:IsForbidden() then
@@ -73,10 +66,10 @@ function M:Apply()
                 tracker:HookScript("OnShow", KeepHidden)
             end
             if ShouldHide() then
-                tracker:Hide()
+                tracker:SetAlpha(0)
                 self.hidden = true
             elseif self.hidden then
-                tracker:Show()
+                tracker:SetAlpha(1)
             end
         end
     end
@@ -97,11 +90,6 @@ function M:Init()
             if detected then
                 M:Apply()
             end
-        end
-    end)
-    S:On("PLAYER_REGEN_ENABLED", function()
-        if M.pending then
-            M:Apply()
         end
     end)
     S:On("PLAYER_ENTERING_WORLD", function()
