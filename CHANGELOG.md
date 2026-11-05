@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.3.1 - 2026-11-05
+- Fixed a group of rare "secret value"/"action blocked" errors that could interrupt Edit Mode, action bar layout, or party frames, caused by several of the addon's own update hooks running too deep inside the game's own protected UI code.
+- Removed the Pet Bar's custom show/hide/mouseover option, since Blizzard's own native pet-bar behavior was the direct cause of one recurring version of the error above; the game's own default behavior (hidden with no pet) now applies to it instead.
+
 ## 0.3.0 - 2026-10-25
 - New: an optional QoL setting to always show the glowing loot sparkle on quest items, instead of
   only with the right graphics option or the interact key held (Options -> QoL -> Quests).
