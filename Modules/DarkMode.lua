@@ -63,10 +63,11 @@ local UNIT_FRAME_TEXTURES = {
     "PaladinPowerBarFrame.ActiveTexture",
 }
 
--- The plain bronze portrait ring every target (elite or not) shares - kept at its own baked-in
--- color rather than flattened like the rest of UNIT_FRAME_TEXTURES, since the elite wreath below
--- is layered directly on top of it (TargetFrame.xml) and needs it to not read as a near-black ring
--- showing through the wreath's gaps.
+-- The plain bronze portrait ring every target (elite or not) shares - named ELITE_TEXTURES for
+-- historical reasons (it used to be dimmed-but-color-preserved specifically for the elite wreath
+-- layered on top of it, see DarkenUnitFrames below for why that was dropped); flattened like the
+-- rest of UNIT_FRAME_TEXTURES now, just kept separate since it goes through DarkenPolled instead
+-- of Darken.
 local ELITE_TEXTURES = {
     "TargetFrame.TargetFrameContainer.FrameTexture",
     "FocusFrame.TargetFrameContainer.FrameTexture",
@@ -108,9 +109,19 @@ local function DarkenUnitFrames()
         S:Darken(S.Resolve(path))
     end
     for _, path in ipairs(ELITE_TEXTURES) do
-        -- keepTextureColor: the gold/bronze ring's own color is the whole point of it, so it's
-        -- just dimmed rather than flattened to gray like plain chrome.
-        S:Darken(S.Resolve(path), ELITE, nil, true)
+        -- Flattened like PlayerFrame's own ring now (no keepTextureColor, no ELITE offset) -
+        -- confirmed live the gold-preserving dim still reads as clearly undarkened next to
+        -- everything else for the vast majority of targets, which aren't elite/boss and so never
+        -- show the wreath this was originally preserved for in the first place (that wreath,
+        -- BossPortraitFrameTexture, is handled entirely separately below and left alone). A flat
+        -- ring mismatching the elite wreath on the rare elite/boss target is a smaller cost than
+        -- an undarkened ring on every normal one. DarkenPolled, not Darken: confirmed live
+        -- Blizzard recolors this ring itself on every target switch (elite vs. normal get
+        -- different base tints), the same "Blizzard recolors this dynamically, a permanent hook
+        -- can't reliably win that race" case as MainActionBar's own art above, just per-target
+        -- instead of per-vehicle-transition. The ticker in Init below (S:RepaintPolled) already
+        -- covers this too, no separate ticker needed.
+        S:DarkenPolled(S.Resolve(path))
     end
 
     for i = 1, 4 do
@@ -198,6 +209,18 @@ local function DarkenEdges(frame)
     S:Darken(frame.BorderArt)
 end
 
+-- Same as DarkenEdges, but for art inside MainActionBar's own hierarchy - see DarkenActionBars
+-- below for why this goes through S:DarkenPolled instead.
+local function DarkenEdgesPolled(frame)
+    if not frame then
+        return
+    end
+    S:DarkenPolled(frame.TopEdge)
+    S:DarkenPolled(frame.BottomEdge)
+    S:DarkenPolled(frame.Center)
+    S:DarkenPolled(frame.BorderArt)
+end
+
 local function DarkenButtonArt(button, name)
     if not button then
         return
@@ -222,20 +245,44 @@ local function DarkenActionBars()
         end
     end
 
-    -- MainActionBar itself (its edges, every child via GetChildren, end caps) and the classic-style
-    -- bar's own end caps are deliberately NOT darkened directly, for the same reason PetActionButton
-    -- etc. were dropped from BUTTON_BARS above: Blizzard recolors this whole hierarchy's art as part
-    -- of vehicle-state transitions (which also hide the pet bar and populate the override bar), and
-    -- a permanent SetVertexColor/SetDesaturated hook anywhere in it taints that entire transition -
-    -- confirmed live as the pet-bar MainActionBar reflow block and the override bar's secret-cooldown
-    -- block showing up together, every time, from this one source. MainMenuBarTexture/XP/Reputation
-    -- bar textures are a separate, non-action-bar hierarchy (StatusTrackingBarManager's) and stay.
+    -- MainActionBar itself (its edges, every child via GetChildren, end caps) and the classic-
+    -- style bar's own end caps go through S:DarkenPolled, not S:Darken - Blizzard recolors this
+    -- whole hierarchy's art as part of vehicle-state transitions (which also hide the pet bar and
+    -- populate the override bar), and a permanent SetVertexColor/SetDesaturated hook anywhere in
+    -- it taints that entire transition, confirmed live as the pet-bar MainActionBar reflow block
+    -- and the override bar's secret-cooldown block showing up together, every time, from this one
+    -- source. DarkenPolled never installs that hook, so there's nothing left for it to taint; the
+    -- ticker in Init below is what keeps it dark instead of a self-correcting hook.
+    local mainBar = _G.MainActionBar or _G.MainMenuBar
+    if mainBar then
+        DarkenEdgesPolled(mainBar)
+        for _, child in ipairs({ mainBar:GetChildren() }) do
+            DarkenEdgesPolled(child)
+        end
+        -- The gryphons are either textures themselves or frames holding a .Texture.
+        local endCaps = mainBar.EndCaps
+        if endCaps then
+            for _, cap in ipairs({ endCaps.LeftEndCap or false, endCaps.RightEndCap or false }) do
+                if cap then
+                    S:DarkenPolled(cap, LIGHTER)
+                    S:DarkenPolled(cap.Texture, LIGHTER)
+                end
+            end
+        end
+    end
+
+    -- Classic style main bar art. MainMenuBarTexture/XP/Reputation bar textures are a separate,
+    -- non-action-bar hierarchy (StatusTrackingBarManager's) and keep using the normal hooked
+    -- S:Darken - Blizzard doesn't recolor those as part of a vehicle transition.
     for i = 0, 3 do
+        S:DarkenPolled(_G["MainMenuBarTexture" .. i])
         S:Darken(_G["MainMenuMaxLevelBar" .. i])
         S:Darken(_G["MainMenuXPBarTexture" .. i])
         S:Darken(_G["ReputationWatchBarTexture" .. i])
         S:Darken(_G["ReputationXPBarTexture" .. i])
     end
+    S:DarkenPolled(_G.MainMenuBarLeftEndCap, LIGHTER)
+    S:DarkenPolled(_G.MainMenuBarRightEndCap, LIGHTER)
 
     if StatusTrackingBarManager then
         S:Darken(S.Resolve("StatusTrackingBarManager.MainStatusTrackingBarContainer.BarFrameTexture"))
@@ -699,6 +746,15 @@ end
 
 function M:Init()
     self:HookMenus()
+    -- Wins back MainActionBar's own art (edges, gryphons, classic-style end caps) from Blizzard's
+    -- own vehicle-transition recolors a few times a second - the trade S:DarkenPolled makes for
+    -- never hooking SetVertexColor/SetDesaturated on that hierarchy (Core.lua). Cheap: a handful
+    -- of textures, not the whole tracked set S:RepaintAll() would redo.
+    C_Timer.NewTicker(0.3, function()
+        if S:DarkModeActive() then
+            S:RepaintPolled()
+        end
+    end)
     -- Damage meter windows are created when they are first opened; new ones are picked up here.
     C_Timer.NewTicker(1, function()
         if not S:DarkModeActive() then
@@ -734,6 +790,20 @@ function M:Init()
     end)
     -- Party/raid frames and pet/whisper windows are created on demand.
     S:On("GROUP_ROSTER_UPDATE", function()
+        if S:DarkModeActive() then
+            S.SafeCall(DarkenUnitFrames)
+        end
+    end)
+    -- Target/focus frame art (TargetFrameContainer.FrameTexture, the level badge, the cast bar
+    -- border, ...) only ever resolves to a real texture once you've actually had a target/focus
+    -- at least once - DarkenUnitFrames running once at login, before that's happened, leaves
+    -- S.Resolve() finding nothing there yet to darken, and nothing re-ran it afterward.
+    S:On("PLAYER_TARGET_CHANGED", function()
+        if S:DarkModeActive() then
+            S.SafeCall(DarkenUnitFrames)
+        end
+    end)
+    S:On("PLAYER_FOCUS_CHANGED", function()
         if S:DarkModeActive() then
             S.SafeCall(DarkenUnitFrames)
         end

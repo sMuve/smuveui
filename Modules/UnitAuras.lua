@@ -94,9 +94,18 @@ end
 
 -- Containers ---------------------------------------------------------------------------------------
 
+-- parent is only ever TargetFrame/FocusFrame (see Build() below) - but the container itself is
+-- always created on UIParent instead, never on parent directly. Confirmed live the same way the
+-- original Modules\PartyFrames.lua bug was: an AuraContainer parented straight into a protected
+-- unit frame and bound to it with SetUnit leaves that frame persistently tainted for the rest of
+-- the session, not just for the call that parented it - surfaced here as the dark-mode fixes not
+-- fully taking on the target/focus frame, and a /smuve dump failing to even read some of
+-- TargetFrame's own children ("Attempt to access forbidden object from code tainted by an AddOn").
+-- Position still tracks parent below via SetPoint/SetFrameLevel (reading it, never structurally
+-- parenting to it), same as the nameplate and party frame aura containers.
 local function CreateBlock(parent, helpful, size, perRow, rows, db, purgeGlow, unit)
     local AF = AuraUtil.AuraFilters
-    local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+    local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
     container:SetEnabled(false)
     if container.SetFlattensRenderLayers then
         container:SetFlattensRenderLayers(true)
@@ -448,6 +457,21 @@ function M:BuildAll()
     end
 end
 
+-- Native client bug, confirmed live via /smuve dump (debug.focusFrame): FocusFrame's own
+-- in-combat glow texture comes anchored to TargetFrame's container, not its own. A plain SetPoint
+-- correction, not a hook - this is a decorative ARTWORK-layer texture (file=8036209, pure red
+-- tint), not a Hide/Show or internal-state write, so it carries none of the taint risk those do.
+-- Idempotent: safe to call unconditionally, whether or not the anchor is actually still wrong.
+local function FixFocusFlashAnchor()
+    local container = FocusFrame and FocusFrame.TargetFrameContainer
+    local flash = container and container.Flash
+    if not flash then
+        return
+    end
+    flash:ClearAllPoints()
+    flash:SetPoint("CENTER", container, "CENTER", -1, 1)
+end
+
 -- Module -------------------------------------------------------------------------------------------
 
 function M:Init()
@@ -483,7 +507,18 @@ function M:Init()
         end
     end
     S:On("PLAYER_TARGET_CHANGED", function() Update("target") end)
-    S:On("PLAYER_FOCUS_CHANGED", function() Update("focus") end)
+    S:On("PLAYER_FOCUS_CHANGED", function()
+        Update("focus")
+        pcall(FixFocusFlashAnchor)
+    end)
+    -- A plain client bug, confirmed live via /smuve dump: FocusFrame's own in-combat glow
+    -- (TargetFrameContainer.Flash) comes anchored to TargetFrame.TargetFrameContainer instead of
+    -- its own FocusFrame.TargetFrameContainer - every sibling texture on the same frame anchors
+    -- to its own container correctly, just this one doesn't. Visually: entering combat with a
+    -- focus target renders its red glow on the TARGET frame instead, a literal second ring there
+    -- whenever both a target and a focus are set. Present from login regardless of whether a
+    -- focus has ever been set yet, so this also runs once up front, not just on focus changes.
+    pcall(FixFocusFlashAnchor)
     -- A unit can turn hostile or friendly (duels, PvP flags).
     S:On("UNIT_FACTION", function(_, unit)
         if unit == "target" or unit == "focus" then

@@ -854,6 +854,59 @@ local function ApplyBarColor(frame, unit)
     pcall(PaintBarColor, healthBar)
 end
 
+-- Name text color --------------------------------------------------------------------------------
+-- Confirmed in Blizzard's own source (NamePlateDriverMixin:UpdateNamePlateOptions /
+-- IsUnitNameColored): colorNameBySelection, the option that drives Blizzard's own reaction-colored
+-- name text, is only ever true for the "Legacy" nameplate style - every other style (the default
+-- on this client) leaves non-class-colored names plain white. There's no CVar fix for this one
+-- either. Scoped to NPCs only here (UnitIsPlayer check below) - friendly players already have
+-- their own native, CVar-driven class-color path (the FRIENDLY_CVARS block above); this never
+-- touches that. Same hook-the-setter-and-repaint pattern as the health bar just above, which has
+-- had no taint issues all session - unlike the showOnlyName lesson elsewhere in this file, this
+-- never writes into any of Blizzard's own internal frame state, just a plain color setter.
+local namePainting = false
+local nameColorHooked = setmetatable({}, { __mode = "k" }) -- name fontstring -> true
+local nameUnit = setmetatable({}, { __mode = "k" })        -- name fontstring -> its current unit token
+
+local function PaintNameColor(name)
+    local unit = nameUnit[name]
+    if not unit then
+        return
+    end
+    local isPlayer = UnitIsPlayer(unit)
+    if S.IsSecret(isPlayer) or isPlayer then
+        return
+    end
+    local r, g, b = name:GetTextColor()
+    if MatchesSpecialGray(r, g, b) then
+        return
+    end
+    local color = PlateBarColor(unit)
+    if not color then
+        return
+    end
+    namePainting = true
+    name:SetVertexColor(color.r, color.g, color.b)
+    namePainting = false
+end
+
+local function ApplyNameColor(frame, unit)
+    local name = frame.name
+    if not name or not Accessible(name) then
+        return
+    end
+    nameUnit[name] = unit
+    if not nameColorHooked[name] then
+        nameColorHooked[name] = true
+        hooksecurefunc(name, "SetVertexColor", function(self)
+            if not namePainting then
+                pcall(PaintNameColor, self)
+            end
+        end)
+    end
+    pcall(PaintNameColor, name)
+end
+
 -- Friendly nameplates --------------------------------------------------------------------------
 -- Both the "name only" simplification (health bar, cast bar, level badge and native buffs/
 -- debuffs all hidden) and the class colored name are native client behavior on this build,
@@ -870,6 +923,52 @@ local function ApplyFriendlyCVars()
     local db = DB()
     for key, cvar in pairs(FRIENDLY_CVARS) do
         SetCVar(cvar, db[key] and "1" or "0")
+    end
+end
+
+-- Friendly NPCs have no CVar equivalent to the one above - confirmed live that calling into the
+-- protected NamePlateUnitFrame's own SetShowOnlyName/UpdateAnchors/
+-- CompactUnitFrame_UpdatePlayerLevelDiff directly, even once and un-hooked, left that specific
+-- frame OBJECT persistently tainted for the rest of the session (the same class of bug as the
+-- AuraContainer-parented-on-a-protected-frame lesson elsewhere in this addon) - and since
+-- nameplate frames get reused for different units over a session, a frame touched for one NPC
+-- kept erroring (secret maxHealth compares, restricted-region GetPoint) long after being
+-- reassigned to a completely unrelated player.
+--
+-- SetAlpha is a different story - confirmed safe elsewhere in this addon even called repeatedly,
+-- live, on Blizzard's own protected frames (Modules\BarVisibility.lua), so this fades the same
+-- three visual pieces Blizzard's own showOnlyName hides (health bar, cast bar, native buffs/
+-- debuffs) to invisible instead of touching any of Blizzard's internal state - the name itself is
+-- untouched and stays exactly where it already was. A ticker (in Init below) reasserts this a few
+-- times a second: the comment above this block already documents the client's own update passes
+-- fighting a plain alpha fade here once before, so a single apply per bind isn't trusted alone.
+local NPC_NAME_ONLY_PARTS = { "HealthBarsContainer", "CastBarsContainer", "AurasFrame", "PlayerLevelDiffFrame" }
+
+-- Tracks only the plates we've actually faded, so a plain enemy plate we've never touched stays
+-- untouched (AurasFrame on those is owned by SetDefaultAurasShown below - alpha 0, so only our own
+-- custom containers show; re-asserting alpha 1 on it every tick fought that and brought Blizzard's
+-- native buff/debuff icons back alongside ours, confirmed live). But a plate IS.Friend()-true for
+-- just a moment - a neutral unit, or one that's friendly right up until you engage it - used to get
+-- faded and then never un-faded: once IsFriend() correctly flipped back to false, the old early
+-- return here skipped this plate entirely forever after, confirmed live as nameplates stuck
+-- invisible once combat started. This only ever un-fades a plate it itself faded.
+local npcNameOnlyFaded = setmetatable({}, { __mode = "k" }) -- frame -> true while we're hiding it
+
+local function ApplyNPCNameOnlyAlpha(frame)
+    if not Accessible(frame) then
+        return
+    end
+    local hide = frame:IsFriend() and not frame:IsPlayer() and DB().friendlyNameOnly
+    if not hide and not npcNameOnlyFaded[frame] then
+        return
+    end
+    npcNameOnlyFaded[frame] = hide or nil
+    local alpha = hide and 0 or 1
+    for _, part in ipairs(NPC_NAME_ONLY_PARTS) do
+        local region = frame[part]
+        if region and Accessible(region) and region:GetAlpha() ~= alpha then
+            region:SetAlpha(alpha)
+        end
     end
 end
 
@@ -1001,7 +1100,9 @@ function M:Bind(unit)
     pcall(ApplyBarHeight, frame)
     pcall(DarkenBorder, frame)
     pcall(ApplyBarColor, frame, unit)
+    pcall(ApplyNameColor, frame, unit)
     pcall(ApplyTextSizes, frame)
+    pcall(ApplyNPCNameOnlyAlpha, frame)
     -- Whole nameplate scale (every plate; the aura icons on it scale along).
     local scale = db.scale or 1
     if math.abs(frame:GetScale() - scale) > 0.001 then
@@ -1077,6 +1178,20 @@ function M:Init()
     end
     self:RefreshPurgeTypes()
     ApplyFriendlyCVars()
+
+    -- Reasserts the friendly-NPC name-only alpha fade a few times a second, independent of
+    -- Bind() - cheap for the handful of plates on screen, and the only way to win against the
+    -- client's own update passes occasionally resetting it back to 1 on their own.
+    C_Timer.NewTicker(0.2, function()
+        if not Supported() then
+            return
+        end
+        for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
+            if plate.UnitFrame then
+                pcall(ApplyNPCNameOnlyAlpha, plate.UnitFrame)
+            end
+        end
+    end)
 
     S:On("PLAYER_REGEN_ENABLED", function()
         if M.widthPending then

@@ -355,6 +355,53 @@ function S.DarkModeDebugIsTracked(texture)
     return texture ~= nil and tracked[texture] ~= nil
 end
 
+local polled = {} -- texture -> true: tracked like S:Darken's, but never hooked (see below)
+
+-- Same bookkeeping and initial paint as S:Darken, but never installs the SetVertexColor/
+-- SetDesaturated hooksecurefunc. For art Blizzard itself recolors as one step inside a larger
+-- secure sequence (MainActionBar's own hierarchy during vehicle-state transitions, which also
+-- hides the pet bar and populates the override bar) - confirmed live that hooking ANYTHING in that
+-- hierarchy taints the whole transition, which is why Modules\DarkMode.lua used to leave it
+-- undarkened entirely. Never installing the hook removes that vector completely: nothing of ours
+-- runs as part of Blizzard's own call chain any more. The tradeoff is this texture no longer
+-- self-corrects the instant Blizzard recolors it - RepaintPolled below, on its own ticker (not
+-- nested in anything Blizzard calls), is what wins that back a few times a second instead, the
+-- same "poll instead of hook" pattern already used for nameplates/action bars/party frames
+-- elsewhere in this addon.
+function S:DarkenPolled(texture, offset, condition, keepTextureColor)
+    if type(texture) ~= "table" or not texture.SetVertexColor or not texture.IsObjectType then
+        return
+    end
+    if texture:IsForbidden() or not texture:IsObjectType("Texture") then
+        return
+    end
+    if tracked[texture] == nil then
+        local r, g, b = texture:GetVertexColor()
+        if S.IsSecret(r) or S.IsSecret(g) or S.IsSecret(b) then
+            r, g, b = 1, 1, 1
+        end
+        local desaturated = texture.IsDesaturated and texture:IsDesaturated()
+        if S.IsSecret(desaturated) then
+            desaturated = false
+        end
+        originals[texture] = {
+            r = r or 1, g = g or 1, b = b or 1,
+            desaturated = desaturated or false,
+        }
+    end
+    tracked[texture] = offset or 0
+    conditions[texture] = condition
+    keepColor[texture] = keepTextureColor or nil
+    polled[texture] = true
+    Paint(texture)
+end
+
+function S:RepaintPolled()
+    for texture in pairs(polled) do
+        Paint(texture)
+    end
+end
+
 -- Darkens every texture region of a frame (not its children).
 function S:DarkenRegions(frame, offset, filter)
     if not frame or not frame.GetRegions or frame:IsForbidden() then

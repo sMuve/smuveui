@@ -211,6 +211,8 @@ function S:Dump()
     Walk(PlayerFrame, 0, 6, debug.playerFrame)
     debug.targetFrame = {}
     Walk(TargetFrame, 0, 6, debug.targetFrame)
+    debug.focusFrame = {}
+    Walk(FocusFrame, 0, 6, debug.focusFrame)
 
     -- Target/focus cast bar repositioning (cast a spell with buffs/debuffs showing first, on
     -- both the target and yourself if possible, to tell the two frames' behavior apart).

@@ -155,7 +155,15 @@ local function Bind(index)
     end
 
     local unit = frame.unit
-    if not db.enabled or not unit then
+    -- Blizzard can leave .unit populated on a member slot even after it's no longer actually
+    -- displayed (leaving the group, or Edit Mode's preview/restore cycle without any roster
+    -- change at all) - confirmed live our own buffs stayed visible after leaving a party because
+    -- of exactly that. IsShown() wasn't enough either: Blizzard hides the whole party frame's
+    -- container, not each individual member frame, so a member frame's OWN explicit shown flag
+    -- can still read true while it's actually invisible - IsVisible() accounts for the parent
+    -- chain and is what actually matches what's on screen. Our containers are parented to
+    -- UIParent (see CreateContainer above), not this frame, so they never auto-hide on their own.
+    if not db.enabled or not unit or not frame:IsVisible() then
         DisableHost(host)
         return
     end
@@ -214,6 +222,10 @@ function M:Init()
     S:On("PLAYER_ENTERING_WORLD", function()
         C_Timer.After(0.5, BindAll)
     end)
+    -- Catches everything GROUP_ROSTER_UPDATE doesn't - Edit Mode's own preview/restore cycle
+    -- hides and reshows these frames with no roster change and no event of its own to catch.
+    -- Cheap at 5 members; not a hook, so none of the CompactUnitFrame_SetUnit lessons apply.
+    C_Timer.NewTicker(0.5, BindAll)
 end
 
 function M:Refresh()
