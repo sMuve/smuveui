@@ -46,6 +46,7 @@ S.defaults = {
         matchDamageMeterSize = true,   -- a new damage meter window matches the first one's size
         skipDeleteConfirmText = false, -- a plain click deletes rare+ items, no typing "DELETE"
         combatIndicator = false,  -- +COMBAT/-COMBAT flashed center screen entering/leaving combat
+        friendFactionColors = true, -- tints Battle.net friend rows blue/red by their character's faction
     },
     actionbars = {
         rangeIndicator = true,

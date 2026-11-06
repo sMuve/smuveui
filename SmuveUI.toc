@@ -36,5 +36,6 @@ Modules\Nameplates.lua
 Modules\UnitAuras.lua
 Modules\BigDebuffs.lua
 Modules\RestedXPSkin.lua
+Modules\FriendsList.lua
 
 Options.lua

@@ -424,6 +424,11 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
         Note(right, "Chattynator is loaded and already shares its tabs and links URLs, so these are inactive.")
     end
 
+    Header(right, "Social")
+    Checkbox(right, "Color friend rows by faction",
+        "Tints each Battle.net friend's row in the friends list blue for Alliance, red for Horde, based on the faction of their currently played character. Friends with no character data (offline, or playing something else) are left as-is.",
+        Setting("qol", "friendFactionColors", "FriendsList"))
+
     JoinColumns(layout, columns)
 end }
 

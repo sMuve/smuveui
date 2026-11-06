@@ -12,11 +12,27 @@ local BUILTIN_FONTS = {
     { name = "Arial Narrow", path = "Fonts\\ARIALN.TTF" },
     { name = "Skurri", path = "Fonts\\skurri.ttf" },
     { name = "Morpheus", path = "Fonts\\MORPHEUS.ttf" },
-    { name = "Rajdhani", path = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Regular.ttf" },
+    { name = "Rajdhani", path = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Regular.ttf", shared = true },
     -- A bold weight is a separate font file, not a flag the client can apply to Regular (the
     -- "OUTLINE"/"THICKOUTLINE"/"MONOCHROME" flags SetFont takes don't include bold).
-    { name = "Rajdhani Bold", path = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf" },
+    { name = "Rajdhani Bold", path = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf", shared = true },
 }
+
+-- Share the bundled, non-stock fonts (shared = true above) with every other addon via
+-- LibSharedMedia, the de-facto convention other UIs (EllesmereUI, muleyoUI, ...) use for this -
+-- so WeakAuras/Details/etc. pickers list "Rajdhani" too, instead of only our own options panel.
+-- Soft dependency: skipped entirely if no other addon has LSM loaded.
+local function RegisterSharedFonts()
+    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+    if not LSM then
+        return
+    end
+    for _, font in ipairs(BUILTIN_FONTS) do
+        if font.shared then
+            LSM:Register(LSM.MediaType.FONT, font.name, font.path)
+        end
+    end
+end
 
 local originalFonts = {}     -- font object -> file
 local defaultFont            -- STANDARD_TEXT_FONT at login (read only)
@@ -67,6 +83,7 @@ local function EachFontObject(callback)
 end
 
 function M:Init()
+    RegisterSharedFonts()
     defaultFont = STANDARD_TEXT_FONT
     EachFontObject(function(fontObject)
         originalFonts[fontObject] = fontObject:GetFont()
