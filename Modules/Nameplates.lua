@@ -945,14 +945,30 @@ local FRIENDLY_CVARS = {
     friendlyClassColor = "nameplateUseClassColorForFriendlyPlayerUnitNames",
 }
 
+-- This client doesn't register the plain nameplateShowFriendlyPets/Totems/Guardians/Minions CVars
+-- at all - confirmed live via /smuve dump's nameplateCVars probe, GetCVar returns nil for every
+-- one of them. The real, working names here are these "Player"-infixed ones (same CVars
+-- BetterBlizzPlates's shared nameplate-toggle code uses for this same WoW Forever client) - all
+-- four covered since a class's summon can land in any of Pets/Totems/Guardians/Minions depending
+-- on type (e.g. a hunter pet is a Pet, a shaman totem is a Totem, a mage Mirror Image or druid
+-- treant is a Guardian), so only setting one of them left the others showing regardless of this
+-- checkbox - which is exactly the bug reported live (a party member's pet nameplate in a dungeon
+-- stayed visible with "Hide pets/totems" checked).
+local FRIENDLY_PET_CVARS = {
+    "nameplateShowFriendlyPlayerPets", "nameplateShowFriendlyPlayerTotems",
+    "nameplateShowFriendlyPlayerGuardians", "nameplateShowFriendlyPlayerMinions",
+}
+
 local function ApplyFriendlyCVars()
     local db = DB()
     for key, cvar in pairs(FRIENDLY_CVARS) do
         SetCVar(cvar, db[key] and "1" or "0")
     end
-    -- Inverted sense vs. the loop above: nameplateShowFriendlyPets is "1" by default (pets DO
-    -- show), so our own "hide them" checkbox means setting it to "0", not "1".
-    SetCVar("nameplateShowFriendlyPets", db.hideFriendlyPets and "0" or "1")
+    -- Inverted sense vs. the loop above: these are "1" by default (pets/totems/guardians/minions
+    -- DO show), so our own "hide them" checkbox means setting them to "0", not "1".
+    for _, cvar in ipairs(FRIENDLY_PET_CVARS) do
+        SetCVar(cvar, db.hideFriendlyPets and "0" or "1")
+    end
 end
 
 -- Friendly NPCs have no CVar equivalent to the one above - confirmed live that calling into the

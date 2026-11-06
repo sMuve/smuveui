@@ -391,7 +391,13 @@ function S:Dump()
         local meta = getmetatable(container)
         Keys("AuraContainer methods", meta and meta.__index)
     end
-    -- Nameplate settings (CVars) and their values.
+    -- Nameplate settings (CVars) and their values. C_Console.GetAllCommands() (tried below first)
+    -- lists console commands, not CVars, so it never actually turned up anything "nameplate" -
+    -- confirmed live, always came back empty. Probes an explicit candidate list by name instead,
+    -- to settle which of two conflicting naming schemes found for friendly pet/totem/guardian
+    -- visibility (the plain nameplateShowFriendlyPets/Totems/Guardians/Minions vs. the
+    -- "Player"-infixed nameplateShowFriendlyPlayerPets/Totems/Guardians/Minions some addons use)
+    -- actually exists on this client - GetCVar returns nil for a name the client doesn't know.
     debug.nameplateCVars = {}
     if C_Console and C_Console.GetAllCommands then
         for _, command in ipairs(C_Console.GetAllCommands()) do
@@ -400,8 +406,19 @@ function S:Dump()
                 table.insert(debug.nameplateCVars, name .. " = " .. tostring(GetCVar(name)))
             end
         end
-        table.sort(debug.nameplateCVars)
     end
+    local CVAR_PROBE = {
+        "nameplateShowFriendlyPets", "nameplateShowFriendlyTotems", "nameplateShowFriendlyGuardians",
+        "nameplateShowFriendlyMinions", "nameplateShowFriendlyPlayerPets", "nameplateShowFriendlyPlayerTotems",
+        "nameplateShowFriendlyPlayerGuardians", "nameplateShowFriendlyPlayerMinions",
+        "nameplateShowFriendlyPlayers", "nameplateShowFriendlyNPCs", "nameplateShowFriendlyNpcs",
+        "nameplateShowOnlyNameForFriendlyPlayerUnits", "nameplateUseClassColorForFriendlyPlayerUnitNames",
+    }
+    for _, name in ipairs(CVAR_PROBE) do
+        local ok, value = pcall(GetCVar, name)
+        table.insert(debug.nameplateCVars, name .. " = " .. (ok and tostring(value) or ("ERROR: " .. tostring(value))))
+    end
+    table.sort(debug.nameplateCVars)
 
     -- The game menu (Esc) and its buttons (open it once before dumping).
     debug.gameMenu = {}
