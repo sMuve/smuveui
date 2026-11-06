@@ -2,6 +2,12 @@
 
 All notable changes to this addon are documented here.
 
+## 0.5.0 - 2026-11-06
+- New: Battle.net friends in your friends list are now tinted blue for Alliance or red for Horde, based on the faction of the character they're currently playing. Toggle in Options -> QoL -> Social.
+- New: SmuveUI's bundled Rajdhani font is now shared with other addons that support LibSharedMedia (WeakAuras, ForeverAuras, and similar), so it shows up as a pickable font there too.
+- Fixed friendly players' names on nameplates sometimes staying plain white instead of their class color, when "Class colored" friendly nameplate names is enabled.
+- Fixed the "Hide pets/totems" friendly nameplate option (added in 0.4.2) not actually hiding anything. It now also hides friendly guardians and minions (e.g. a mage's Mirror Image, a druid's treant), not just pets and totems.
+
 ## 0.4.2 - 2026-11-05
 - New: an optional nameplate setting to hide friendly players' pets and totems (Options -> Nameplates -> Friendly Nameplates -> "Hide pets/totems").
 - Fixed your own debuffs bar not lining up with the right edge of your buffs bar.
