@@ -653,6 +653,55 @@ function S:Dump()
         end
     end
 
+    -- This character's saved Edit Mode layout, every system and setting - to compare two
+    -- characters' actual saved settings (e.g. text/font scale) side by side instead of guessing
+    -- which Edit Mode control is responsible for a visual difference between them. Dumps
+    -- everything rather than filtering to a "party" system up front, since this client's exact
+    -- Enum names/values for that aren't confirmed - the raw numbers plus the name map below are
+    -- enough to identify it by comparing the two characters' dumps against each other.
+    debug.editModeLayout = {}
+    local okLayouts, layoutInfo = pcall(function() return C_EditMode and C_EditMode.GetLayouts and C_EditMode.GetLayouts() end)
+    if okLayouts and layoutInfo then
+        table.insert(debug.editModeLayout, "activeLayout=" .. tostring(layoutInfo.activeLayout))
+        local layouts = layoutInfo.layouts or {}
+        table.insert(debug.editModeLayout, "#layouts=" .. tostring(#layouts))
+        -- activeLayout isn't a plain index into layouts (confirmed live: activeLayout=4 with
+        -- only 1 entry in layouts) - just dumps every layout's systems instead of trying to
+        -- single out "the active one".
+        for layoutIndex, layout in ipairs(layouts) do
+            table.insert(debug.editModeLayout, "== layouts[" .. layoutIndex .. "] layoutName=" ..
+                tostring(layout.layoutName) .. " layoutType=" .. tostring(layout.layoutType) ..
+                " interfaceStyle=" .. tostring(layout.interfaceStyle))
+            for _, system in ipairs(layout.systems or {}) do
+                table.insert(debug.editModeLayout, "  system=" .. tostring(system.system) ..
+                    " systemIndex=" .. tostring(system.systemIndex) .. " enabled=" .. tostring(Safe(system.enabled)))
+                for _, setting in ipairs(system.settings or {}) do
+                    table.insert(debug.editModeLayout, "    setting=" .. tostring(setting.setting) ..
+                        " value=" .. tostring(setting.value))
+                end
+            end
+        end
+    else
+        table.insert(debug.editModeLayout, "no C_EditMode.GetLayouts: " .. tostring(layoutInfo))
+    end
+    -- Every Enum.EditMode*Setting/*System table's name->number map, to translate the raw numbers
+    -- above into what they actually mean.
+    debug.editModeEnums = {}
+    if Enum then
+        for enumName, enumTable in pairs(Enum) do
+            if type(enumName) == "string" and enumName:find("^EditMode") and type(enumTable) == "table" then
+                local parts = {}
+                for name, value in pairs(enumTable) do
+                    if type(value) == "number" then
+                        table.insert(parts, tostring(value) .. "=" .. tostring(name))
+                    end
+                end
+                table.sort(parts)
+                debug.editModeEnums[enumName] = table.concat(parts, " ")
+            end
+        end
+    end
+
     -- Compact party frame (join/form a party, or enable the Edit Mode preview, before dumping) -
     -- first look at this part of the UI, so the structure is read rather than guessed.
     debug.partyFrame = {}

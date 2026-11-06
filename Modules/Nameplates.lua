@@ -859,14 +859,30 @@ end
 -- IsUnitNameColored): colorNameBySelection, the option that drives Blizzard's own reaction-colored
 -- name text, is only ever true for the "Legacy" nameplate style - every other style (the default
 -- on this client) leaves non-class-colored names plain white. There's no CVar fix for this one
--- either. Scoped to NPCs only here (UnitIsPlayer check below) - friendly players already have
--- their own native, CVar-driven class-color path (the FRIENDLY_CVARS block above); this never
--- touches that. Same hook-the-setter-and-repaint pattern as the health bar just above, which has
--- had no taint issues all session - unlike the showOnlyName lesson elsewhere in this file, this
--- never writes into any of Blizzard's own internal frame state, just a plain color setter.
+-- either. Scoped to NPCs here. Same hook-the-setter-and-repaint pattern as the health bar just
+-- above, which has had no taint issues all session - unlike the showOnlyName lesson elsewhere in
+-- this file, this never writes into any of Blizzard's own internal frame state, just a plain color
+-- setter.
+--
+-- Friendly players get their own branch below instead of being skipped entirely. The CVar
+-- (nameplateUseClassColorForFriendlyPlayerUnitNames, set in FRIENDLY_CVARS above) only colors the
+-- name once the client's own class-info cache for that unit has actually arrived - for a player
+-- you haven't interacted with yet that cache is still empty when the plate is first created, so
+-- CompactUnitFrame_UpdateName paints the name plain white, and nothing forces Blizzard to repaint
+-- it once the cache fills in later (confirmed live: it stays wrong until something else happens to
+-- retrigger UpdateName, e.g. moving closer or hovering). Reference addon BetterBlizzPlates has the
+-- same fix on this same client build (forever/BetterBlizzPlates.lua, BBP.ClassColorAndScaleNames):
+-- it never trusts the CVar's one-shot coloring either, always setting the color itself from
+-- C_ClassColor.GetClassColor and hooking CompactUnitFrame_UpdateName so it's reasserted on every
+-- pass. The SetVertexColor hook here already fires on every one of those passes (that's what
+-- CompactUnitFrame_UpdateName calls internally) - this just also computes and reapplies the real
+-- class color for friendly players instead of leaving them untouched, so a still-stale cache at
+-- the moment Blizzard paints it wrong gets corrected the very next time Blizzard repaints at all,
+-- not only on the next hover/distance change.
 local namePainting = false
 local nameColorHooked = setmetatable({}, { __mode = "k" }) -- name fontstring -> true
 local nameUnit = setmetatable({}, { __mode = "k" })        -- name fontstring -> its current unit token
+local nameFrame = setmetatable({}, { __mode = "k" })       -- name fontstring -> its nameplate frame
 
 local function PaintNameColor(name)
     local unit = nameUnit[name]
@@ -874,14 +890,23 @@ local function PaintNameColor(name)
         return
     end
     local isPlayer = UnitIsPlayer(unit)
-    if S.IsSecret(isPlayer) or isPlayer then
+    if S.IsSecret(isPlayer) then
         return
     end
     local r, g, b = name:GetTextColor()
     if MatchesSpecialGray(r, g, b) then
         return
     end
-    local color = PlateBarColor(unit)
+    local color
+    if isPlayer then
+        local frame = nameFrame[name]
+        if not frame or not Accessible(frame) or not frame:IsFriend() or not DB().friendlyClassColor then
+            return
+        end
+        color = PlateClassColor(unit)
+    else
+        color = PlateBarColor(unit)
+    end
     if not color then
         return
     end
@@ -896,6 +921,7 @@ local function ApplyNameColor(frame, unit)
         return
     end
     nameUnit[name] = unit
+    nameFrame[name] = frame
     if not nameColorHooked[name] then
         nameColorHooked[name] = true
         hooksecurefunc(name, "SetVertexColor", function(self)
