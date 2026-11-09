@@ -28,18 +28,46 @@ local function AddTooltip(region, title, text)
     region:HookScript("OnLeave", GameTooltip_Hide)
 end
 
--- A page lays its rows out top to bottom, each spanning its full content width.
-local function NewLayout(page)
-    return { page = page, y = -64, x = 20 }
+-- A page lays its rows out top to bottom. x/width restrict a layout to one column of a
+-- multi-column page (Columns below); left out, rows span the page's full content width.
+local function NewLayout(page, x, width)
+    return { page = page, y = -64, x = x or 20, width = width }
 end
 
 local function NextRow(layout, height)
     local row = CreateFrame("Frame", nil, layout.page)
     row:SetPoint("TOPLEFT", layout.page, "TOPLEFT", layout.x, layout.y)
-    row:SetPoint("RIGHT", layout.page, "RIGHT", -20, 0)
+    if layout.width then
+        row:SetWidth(layout.width)
+    else
+        row:SetPoint("RIGHT", layout.page, "RIGHT", -20, 0)
+    end
     row:SetHeight(height)
     layout.y = layout.y - height - ROW_GAP
     return row
+end
+
+-- Splits the page, from the current row down, into "count" independent side-by-side layouts
+-- (each with its own y cursor), for content that doesn't need the full page width. Call
+-- JoinColumns once they're built so layout.y reflects whichever column ran longest - the page's
+-- own height is set from layout.y once the category's build function returns.
+local COLUMN_GAP = 30
+local function Columns(layout, count)
+    local contentWidth = layout.page:GetWidth() - layout.x - 20
+    local columnWidth = (contentWidth - COLUMN_GAP * (count - 1)) / count
+    local columns = {}
+    for i = 1, count do
+        local column = NewLayout(layout.page, layout.x + (i - 1) * (columnWidth + COLUMN_GAP), columnWidth)
+        column.y = layout.y
+        columns[i] = column
+    end
+    return columns
+end
+
+local function JoinColumns(layout, columns)
+    for _, column in ipairs(columns) do
+        layout.y = math.min(layout.y, column.y)
+    end
 end
 
 local function Header(layout, text)
@@ -183,7 +211,15 @@ local function Dropdown(layout, text, tooltip, getOptions, get, set)
     local row = NextRow(layout, 30)
     local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     label:SetPoint("LEFT", 4, 0)
+    -- The default 200+250 is sized for a full-width row; inside a narrower column (Columns()) it
+    -- ran past the column's own right edge instead of the panel's. Scaled down to fit
+    -- layout.width when the row has one.
     local labelWidth, dropdownWidth = 200, 250
+    if layout.width then
+        local available = layout.width - 4 - 10
+        labelWidth = math.min(labelWidth, math.floor(available * 0.4))
+        dropdownWidth = math.max(100, available - labelWidth)
+    end
     label:SetWidth(labelWidth)
     label:SetJustifyH("LEFT")
     label:SetText(text)
@@ -211,6 +247,9 @@ local function Button(layout, text, tooltip, onClick)
     local button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
     button:SetText(text)
     local width = math.max(160, button:GetFontString():GetStringWidth() + 30)
+    if layout.width then
+        width = math.min(width, layout.width - 4)
+    end
     button:SetSize(width, 24)
     button:SetPoint("LEFT", 2, 0)
     button:SetScript("OnClick", onClick)
@@ -377,36 +416,39 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
     Note(layout, "Quality-of-life odds and ends, grouped by topic in the categories below.")
 end }
 
-CATEGORIES[3] = { key = "qol_loot", title = "Loot", indent = true, build = function(layout)
-    Header(layout, "Loot")
-    Checkbox(layout, "Faster loot",
+CATEGORIES[3] = { key = "qol_loot_vendors", title = "Loot & Vendors", indent = true, build = function(layout)
+    local columns = Columns(layout, 2)
+    local left, right = columns[1], columns[2]
+
+    Header(left, "Loot")
+    Checkbox(left, "Faster loot",
         "With auto loot on, takes every item the moment the loot window opens.",
         Setting("qol", "fastLoot"))
-    Checkbox(layout, "Loot roll tracker",
+    Checkbox(left, "Loot roll tracker",
         "Need/Greed/Pass show how many players chose them; hover a button to see who.",
         Setting("qol", "lootRolls", "LootRoll"))
-    Checkbox(layout, "Keep roll window open until everyone's chosen",
+    Checkbox(left, "Keep roll window open until everyone's chosen",
         "After you rolled, the window stays up until everyone has chosen instead of closing right away. Needs the tracker above.",
         Setting("qol", "lootRollLinger", "LootRoll"))
-    Checkbox(layout, "Unlock loot roll window",
+    Checkbox(left, "Unlock loot roll window",
         "Edit Mode doesn't offer this window, so it's moved by dragging it directly while this is checked. Always off after a reload.",
         Setting("qol", "lootRollUnlocked", "LootRoll"))
     if S.IsAddOnLoaded("BetterGroupLoot") then
-        Note(layout, "BetterGroupLoot is loaded and replaces the roll frames, so the tracker is inactive.")
+        Note(left, "BetterGroupLoot is loaded and replaces the roll frames, so the tracker is inactive.")
     end
-end }
 
-CATEGORIES[4] = { key = "qol_vendors", title = "Vendors", indent = true, build = function(layout)
-    Header(layout, "Vendors")
-    Checkbox(layout, "Auto sell junk",
+    Header(right, "Vendors")
+    Checkbox(right, "Auto sell junk",
         "Sells every poor-quality (gray) item in your bags the moment a vendor window opens, instead of needing the vendor's own sell-junk button.",
         Setting("qol", "autoSellJunk"))
-    Checkbox(layout, "Auto repair all gear",
+    Checkbox(right, "Auto repair all gear",
         "Repairs all your equipped gear the moment a vendor that offers repairs opens, using guild bank funds first if you're authorized to withdraw enough to cover it.",
         Setting("qol", "autoRepair"))
+
+    JoinColumns(layout, columns)
 end }
 
-CATEGORIES[5] = { key = "qol_quests", title = "Quests", indent = true, build = function(layout)
+CATEGORIES[4] = { key = "qol_quests", title = "Quests", indent = true, build = function(layout)
     Header(layout, "Quests")
     Checkbox(layout, "Hide objective tracker with a quest guide",
         "Completely hides the default objective tracker while RestedXP, Journey or Polestar is loaded. Without one of them the tracker stays.",
@@ -419,14 +461,7 @@ CATEGORIES[5] = { key = "qol_quests", title = "Quests", indent = true, build = f
         Setting("qol", "questSparkle", "QuestSparkle"))
 end }
 
-CATEGORIES[6] = { key = "qol_damagemeter", title = "Damage Meter", indent = true, build = function(layout)
-    Header(layout, "Damage Meter")
-    Checkbox(layout, "Match window size",
-        "A second or third damage meter window (opened from the damage meter's own UI) starts at the same size as the first, instead of the client's default.",
-        Setting("qol", "matchDamageMeterSize", "DamageMeter"))
-end }
-
-CATEGORIES[7] = { key = "qol_fishing", title = "Fishing", indent = true, build = function(layout)
+CATEGORIES[5] = { key = "qol_fishing", title = "Fishing", indent = true, build = function(layout)
     Header(layout, "Fishing")
     Checkbox(layout, "Easy fishing",
         "While a fishing rod is in your main hand: one key casts and reels in your line without clicking the bobber, and the bite splash plays louder. Both turn off the moment the rod comes off.",
@@ -441,14 +476,19 @@ CATEGORIES[7] = { key = "qol_fishing", title = "Fishing", indent = true, build =
         1, 5, 0.5, getBoost, setBoost, "x")
 end }
 
-CATEGORIES[8] = { key = "qol_combat", title = "Combat", indent = true, build = function(layout)
+CATEGORIES[6] = { key = "qol_combat", title = "Combat", indent = true, build = function(layout)
     Header(layout, "Combat")
     Checkbox(layout, "Combat indicator",
         "Flashes +COMBAT in red when you enter combat, -COMBAT in green when you leave, centered on screen.",
         Setting("qol", "combatIndicator", "CombatIndicator"))
+
+    Header(layout, "Damage Meter")
+    Checkbox(layout, "Match window size",
+        "A second or third damage meter window (opened from the damage meter's own UI) starts at the same size as the first, instead of the client's default.",
+        Setting("qol", "matchDamageMeterSize", "DamageMeter"))
 end }
 
-CATEGORIES[9] = { key = "qol_character", title = "Character", indent = true, build = function(layout)
+CATEGORIES[7] = { key = "qol_character", title = "Character", indent = true, build = function(layout)
     Header(layout, "Character")
     Checkbox(layout, "Item rarity borders and enchants",
         "Character frame items get a border in their rarity color and a short note of their enchant, or \"Missing\".",
@@ -461,30 +501,33 @@ CATEGORIES[9] = { key = "qol_character", title = "Character", indent = true, bui
         Setting("qol", "skipDeleteConfirmText", "ItemDelete"))
 end }
 
-CATEGORIES[10] = { key = "qol_chat", title = "Chat", indent = true, build = function(layout)
-    Header(layout, "Chat")
+CATEGORIES[8] = { key = "qol_chat_social", title = "Chat & Social", indent = true, build = function(layout)
+    local columns = Columns(layout, 2)
+    local left, right = columns[1], columns[2]
+
+    Header(left, "Chat")
     local chatAvailable = S.modules.Chat:IsAvailable()
-    local syncRow = Checkbox(layout, "Share chat tabs across characters",
+    local syncRow = Checkbox(left, "Share chat tabs across characters",
         "Chat tabs, their channels, message types, colors and font size are stored for your whole account and set up on every character you log in with.",
         Setting("qol", "chatSync"))
-    local urlRow = Checkbox(layout, "Copyable links in chat",
+    local urlRow = Checkbox(left, "Copyable links in chat",
         "Web addresses in chat become clickable; clicking one opens a box to copy it from.",
         Setting("qol", "chatUrls"))
-    local historyRow = Checkbox(layout, "Chat history",
+    local historyRow = Checkbox(left, "Chat history",
         "The last 200 lines of each chat window (not the combat log) are kept across reloads and relogs, and shown again under a divider.",
         Setting("qol", "chatHistory", "Chat"))
-    local outlineRow = Checkbox(layout, "Outline",
+    local outlineRow = Checkbox(left, "Outline",
         "Outlines the text in every chat window.",
         Setting("qol", "chatOutline", "Chat"))
-    Checkbox(layout, "Sound on whisper",
+    Checkbox(left, "Sound on whisper",
         "Plays a sound whenever you receive a whisper.",
         Setting("qol", "whisperSound", "WhisperSound"))
-    Dropdown(layout, "Whisper sound",
+    Dropdown(left, "Whisper sound",
         "Which sound plays.",
         function() return S.modules.WhisperSound.SOUNDS end,
         function() return S.db.qol.whisperSoundKit end,
         function(value) S.db.qol.whisperSoundKit = value end)
-    local _, saveButton = Button(layout, "Share this chat now",
+    local _, saveButton = Button(left, "Share this chat now",
         "Stores the current chat tabs as the shared layout right away, instead of at logout.",
         function()
             S.modules.Chat:SaveNow()
@@ -496,18 +539,18 @@ CATEGORIES[10] = { key = "qol_chat", title = "Chat", indent = true, build = func
         historyRow.check:Disable()
         outlineRow.check:Disable()
         saveButton:Disable()
-        Note(layout, "Chattynator is loaded and already shares its tabs and links URLs, so these are inactive.")
+        Note(left, "Chattynator is loaded and already shares its tabs and links URLs, so these are inactive.")
     end
-end }
 
-CATEGORIES[11] = { key = "qol_social", title = "Social", indent = true, build = function(layout)
-    Header(layout, "Social")
-    Checkbox(layout, "Color friend rows by faction",
+    Header(right, "Social")
+    Checkbox(right, "Color friend rows by faction",
         "Tints each Battle.net friend's row in the friends list blue for Alliance, red for Horde, based on the faction of their currently played character. Friends with no character data (offline, or playing something else) are left as-is.",
         Setting("qol", "friendFactionColors", "FriendsList"))
+
+    JoinColumns(layout, columns)
 end }
 
-CATEGORIES[12] = { key = "actionbars", title = "Action Bars", build = function(layout)
+CATEGORIES[9] = { key = "actionbars", title = "Action Bars", build = function(layout)
     Header(layout, "Action Bars")
     Checkbox(layout, "Range indicator",
         "Colors the whole button icon: red when out of range, blue when you lack the mana, gray when unusable.",
@@ -568,7 +611,7 @@ local function AuraSettings(layout, unit, label)
     Slider(layout, "Rows", "How many debuff rows there can be.", 1, 6, 1, UA("debuffRows"))
 end
 
-CATEGORIES[13] = { key = "unitframes", title = "Unit Frames", build = function(layout)
+CATEGORIES[10] = { key = "unitframes", title = "Unit Frames", build = function(layout)
     Header(layout, "Unit Frames")
     Checkbox(layout, "Class colored health bars",
         "Player, target, focus, target of target and nameplate health bars use the class color of players. NPCs keep their usual colors.",
@@ -608,7 +651,7 @@ CATEGORIES[13] = { key = "unitframes", title = "Unit Frames", build = function(l
     Slider(layout, "Duration size", "Text size of the remaining time.", 6, 30, 1, Setting("bigDebuffs", "durationSize", "BigDebuffs"))
 end }
 
-CATEGORIES[14] = { key = "player", title = "Player", indent = true, build = function(layout)
+CATEGORIES[11] = { key = "player", title = "Player", indent = true, build = function(layout)
     Header(layout, "Auras")
     if not S.modules.Auras:IsSupported() then
         Note(layout, "This client doesn't offer the aura containers these auras need, so they are inactive.")
@@ -624,15 +667,15 @@ CATEGORIES[14] = { key = "player", title = "Player", indent = true, build = func
     Slider(layout, "Debuffs per row", "How many debuff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraDebuffsPerRow", "Auras"))
 end }
 
-CATEGORIES[15] = { key = "target", title = "Target", indent = true, build = function(layout)
+CATEGORIES[12] = { key = "target", title = "Target", indent = true, build = function(layout)
     AuraSettings(layout, "target", "target")
 end }
 
-CATEGORIES[16] = { key = "focus", title = "Focus", indent = true, build = function(layout)
+CATEGORIES[13] = { key = "focus", title = "Focus", indent = true, build = function(layout)
     AuraSettings(layout, "focus", "focus")
 end }
 
-CATEGORIES[17] = { key = "tooltip", title = "Tooltip", build = function(layout)
+CATEGORIES[14] = { key = "tooltip", title = "Tooltip", build = function(layout)
     Header(layout, "Tooltip")
     Checkbox(layout, "Dark tooltips",
         "Tooltips get a near black background and a darkened border.",
@@ -645,7 +688,7 @@ CATEGORIES[17] = { key = "tooltip", title = "Tooltip", build = function(layout)
         Setting("tooltip", "classColorClass"))
 end }
 
-CATEGORIES[18] = { key = "nameplates", title = "Nameplates", build = function(layout)
+CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(layout)
     local function NP(key)
         return Setting("nameplates", key, "Nameplates")
     end
@@ -721,7 +764,7 @@ CATEGORIES[18] = { key = "nameplates", title = "Nameplates", build = function(la
     Slider(layout, "Y offset", "Moves them down (negative) or up.", -40, 40, 1, NP("ccY"))
 end }
 
-CATEGORIES[19] = { key = "raidFrames", title = "Raid & Party Frames", build = function(layout)
+CATEGORIES[16] = { key = "raidFrames", title = "Raid & Party Frames", build = function(layout)
     local function RF(key)
         return Setting("raidFrames", key, "RaidFrames")
     end
@@ -799,7 +842,7 @@ CATEGORIES[19] = { key = "raidFrames", title = "Raid & Party Frames", build = fu
     Checkbox(layout, "Forward mouse buttons 4/5", "Forwards mouse buttons 4 and 5 clicked on a member frame to whatever action is currently bound to them (mouseover macros, multibars).", RF("mouseButtonForwarding"))
 end }
 
-CATEGORIES[20] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
+CATEGORIES[17] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
     Header(layout, "Minimap")
     Checkbox(layout, "Hide addon buttons",
         "Addon buttons around the minimap and the client's addon compartment are hidden; right-click the map to open them all in one box.",
@@ -848,7 +891,7 @@ StaticPopupDialogs["SMUVEUI_MODULE_RELOAD"] = {
     preferredIndex = 3,
 }
 
-CATEGORIES[21] = { key = "modules", title = "Modules", build = function(layout)
+CATEGORIES[18] = { key = "modules", title = "Modules", build = function(layout)
     Header(layout, "Modules")
     Note(layout, "A module that is switched off doesn't run at all. Changes take effect after a reload.")
     for _, module in ipairs(S.moduleOrder) do
