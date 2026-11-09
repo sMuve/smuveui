@@ -129,6 +129,27 @@ S.defaults = {
         ccX = 0,
         ccY = 0,
     },
+    raidFrames = {              -- party/raid member frame auras, styling and behavior
+        enabled = false,        -- combined switch: buffs, debuffs and defensive cooldowns together
+        buffSizePercent = 33,
+        debuffSizePercent = 33,
+        bossDebuffScale = 1.3,
+        debuffSide = "LEFT",    -- "LEFT" | "RIGHT"; buffs take the opposite bottom corner
+        defensiveSizePercent = 55,
+        defensivePosition = "CENTER", -- "CENTER" | "LEFT" | "RIGHT"
+        defensiveOffsetX = 0,
+        defensiveOffsetY = 0,
+        defensiveShowImportant = false, -- also show the generic "important" filter as a fallback
+        healthTextMode = "DEFAULT",     -- "DEFAULT" | "CLASS" | "CUSTOM"
+        healthTextCustomColor = { r = 1, g = 1, b = 1 },
+        nameClassColor = false,
+        nameCentered = false,   -- party frames only
+        nameHidden = false,
+        roleIconHidden = false,
+        mouseoverHighlight = false,
+        soloVisible = false,    -- keeps the party frame shown while not in a group
+        mouseButtonForwarding = false, -- forwards mouse buttons 4/5 to their bound action
+    },
     minimap = {
         hideButtons = true,
         alwaysShown = {},       -- button name -> true: never hidden

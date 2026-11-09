@@ -745,7 +745,85 @@ CATEGORIES[9] = { key = "nameplates", title = "Nameplates", build = function(lay
     Slider(layout, "Y offset", "Moves them down (negative) or up.", -40, 40, 1, NP("ccY"))
 end }
 
-CATEGORIES[10] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
+CATEGORIES[10] = { key = "raidFrames", title = "Raid & Party Frames", build = function(layout)
+    local function RF(key)
+        return Setting("raidFrames", key, "RaidFrames")
+    end
+    Header(layout, "Buffs, Debuffs & Defensive Cooldowns")
+    if not S.modules.RaidFrames:IsSupported() then
+        Note(layout, "This client doesn't offer the aura containers this needs, so it's inactive.")
+    end
+    Checkbox(layout, "Enable", "Shows buffs, debuffs and defensive cooldowns on every party/raid member frame. Buffs and debuffs together are one switch, not three.", RF("enabled"))
+    local getBuffSize, setBuffSize = RF("buffSizePercent")
+    Slider(layout, "Buff icon size", "Size of buff icons, as a percent of the member frame's height.", 10, 80, 1, getBuffSize, setBuffSize, "%")
+    local getDebuffSize, setDebuffSize = RF("debuffSizePercent")
+    Slider(layout, "Debuff icon size", "Size of ordinary debuff icons, as a percent of the member frame's height.", 10, 80, 1, getDebuffSize, setDebuffSize, "%")
+    local getBossScale, setBossScale = RF("bossDebuffScale")
+    Slider(layout, "Boss/role debuff scale", "How much larger a boss- or role-relevant debuff renders than an ordinary one.", 1, 2, 0.05, getBossScale, setBossScale, "x")
+    Dropdown(layout, "Debuffs on", "Which bottom corner debuffs render on. Buffs take the other corner.",
+        function() return { { value = "LEFT", text = "Left" }, { value = "RIGHT", text = "Right" } } end,
+        RF("debuffSide"))
+    Checkbox(layout, "Show important buffs as a defensive fallback", "Also shows the generic \"important\" buff filter in the defensive-cooldown spot.", RF("defensiveShowImportant"))
+
+    Header(layout, "Defensive Cooldown Position")
+    local getDefensiveSize, setDefensiveSize = RF("defensiveSizePercent")
+    Slider(layout, "Icon size", "Size of defensive-cooldown icons, as a percent of the member frame's height.", 10, 100, 1, getDefensiveSize, setDefensiveSize, "%")
+    Dropdown(layout, "Position", "Where the defensive-cooldown display anchors on the frame.",
+        function() return { { value = "CENTER", text = "Center" }, { value = "LEFT", text = "Left" }, { value = "RIGHT", text = "Right" } } end,
+        RF("defensivePosition"))
+    Slider(layout, "X offset", "Moves the defensive-cooldown display left (negative) or right.", -60, 60, 1, RF("defensiveOffsetX"))
+    Slider(layout, "Y offset", "Moves the defensive-cooldown display down (negative) or up.", -60, 60, 1, RF("defensiveOffsetY"))
+
+    Header(layout, "Frame Styling")
+    Dropdown(layout, "Health value color", "How the health number on each member frame is colored.",
+        function() return { { value = "DEFAULT", text = "Default" }, { value = "CLASS", text = "Class color" }, { value = "CUSTOM", text = "Custom color" } } end,
+        RF("healthTextMode"))
+    do
+        -- One-off color swatch (only meaningful in Custom mode) - not worth a reusable widget
+        -- for the single color setting this add-on currently has.
+        local row = NextRow(layout, 26)
+        local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        label:SetPoint("LEFT", 4, 0)
+        label:SetText("Custom health value color")
+        local swatch = CreateFrame("Button", nil, row)
+        swatch:SetSize(18, 18)
+        swatch:SetPoint("LEFT", label, "RIGHT", 10, 0)
+        local texture = swatch:CreateTexture(nil, "OVERLAY")
+        texture:SetAllPoints()
+        swatch:SetScript("OnClick", function()
+            local c = S.db.raidFrames.healthTextCustomColor
+            local function Apply()
+                local r, g, b = ColorPickerFrame:GetColorRGB()
+                S.db.raidFrames.healthTextCustomColor = { r = r, g = g, b = b }
+                S:Refresh("RaidFrames")
+                texture:SetColorTexture(r, g, b)
+            end
+            ColorPickerFrame:SetupColorPickerAndShow({
+                r = c.r, g = c.g, b = c.b,
+                swatchFunc = Apply,
+                cancelFunc = function()
+                    texture:SetColorTexture(c.r, c.g, c.b)
+                end,
+            })
+        end)
+        AddTooltip(swatch, "Custom health value color", "Used only while \"Health value color\" above is set to Custom.")
+        table.insert(refreshers, function()
+            local c = S.db.raidFrames.healthTextCustomColor
+            texture:SetColorTexture(c.r, c.g, c.b)
+        end)
+    end
+    Checkbox(layout, "Class colored names", "Member names are shown in their class color.", RF("nameClassColor"))
+    local nameRow = Checkbox(layout, "Centered names (party only)", "Centers the name on party frames instead of its default position.", RF("nameCentered"))
+    CheckboxRight(nameRow, "Hide names", "Hides the name entirely.", RF("nameHidden"))
+    Checkbox(layout, "Hide role icon", "Hides the default role icon on member frames.", RF("roleIconHidden"))
+    Checkbox(layout, "Mouseover highlight", "Shows a highlight on a member frame while the pointer is over it.", RF("mouseoverHighlight"))
+
+    Header(layout, "Behavior")
+    Checkbox(layout, "Always show party frame", "Keeps the party frame shown even while not in a group.", RF("soloVisible"))
+    Checkbox(layout, "Forward mouse buttons 4/5", "Forwards mouse buttons 4 and 5 clicked on a member frame to whatever action is currently bound to them (mouseover macros, multibars).", RF("mouseButtonForwarding"))
+end }
+
+CATEGORIES[11] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
     Header(layout, "Minimap")
     Checkbox(layout, "Hide addon buttons",
         "Addon buttons around the minimap and the client's addon compartment are hidden; right-click the map to open them all in one box.",
@@ -778,6 +856,7 @@ local MODULE_NAMES = {
     Nameplates = { "Nameplates", "Enemy nameplate auras, name, size and test mode." },
     UnitAuras = { "Target & focus auras", "The target and focus frames' own buff and debuff rows." },
     BigDebuffs = { "Big debuffs", "A big crowd control / important buff icon over the player and target portraits." },
+    RaidFrames = { "Raid & party frames", "Buffs, debuffs and defensive cooldowns on party/raid member frames, plus their styling and behavior options." },
 }
 
 StaticPopupDialogs["SMUVEUI_MODULE_RELOAD"] = {
@@ -793,7 +872,7 @@ StaticPopupDialogs["SMUVEUI_MODULE_RELOAD"] = {
     preferredIndex = 3,
 }
 
-CATEGORIES[11] = { key = "modules", title = "Modules", build = function(layout)
+CATEGORIES[12] = { key = "modules", title = "Modules", build = function(layout)
     Header(layout, "Modules")
     Note(layout, "A module that is switched off doesn't run at all. Changes take effect after a reload.")
     for _, module in ipairs(S.moduleOrder) do

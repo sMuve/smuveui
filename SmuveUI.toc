@@ -35,6 +35,7 @@ Modules\ObjectiveTracker.lua
 Modules\QuestSparkle.lua
 Modules\Nameplates.lua
 Modules\UnitAuras.lua
+Modules\RaidFrames.lua
 Modules\BigDebuffs.lua
 Modules\RestedXPSkin.lua
 Modules\FriendsList.lua

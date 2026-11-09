@@ -964,6 +964,21 @@ function S:Dump()
         end
     end
 
+    -- Raid/party frame auras: tracked member frames, their bound unit, and the live size of the
+    -- raid-buff visibility exclude list (see Modules\RaidFrames.lua).
+    debug.raidFrames = {}
+    local raidFrames = S.modules.RaidFrames
+    if raidFrames then
+        raidFrames:RefreshDebugState()
+        table.insert(debug.raidFrames, "trackedCount=" .. tostring(raidFrames.debugState.trackedCount))
+        table.insert(debug.raidFrames, "raidBuffExcludeCount=" .. tostring(raidFrames.debugState.raidBuffExcludeCount))
+        for _, line in ipairs(raidFrames.debugState.frames or {}) do
+            table.insert(debug.raidFrames, line)
+        end
+    else
+        table.insert(debug.raidFrames, "module not loaded")
+    end
+
     -- Easy fishing: cast/reel key state and the held-CVar session (see Modules\EasyFishing.lua).
     debug.easyFishing = {}
     local easyFishing = S.modules.EasyFishing
