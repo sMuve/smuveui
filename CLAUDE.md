@@ -20,6 +20,22 @@ Confirmed precedent: weapon imbues looked unreachable through every stock-equiva
 enumeration) until EllesmereUI's source showed the real answer was a WoW-Forever-specific enum
 (`Enum.ItemEnchantType.Imbue`) read through a different API (`C_Item.GetWeaponEnchantInfo`).
 
+# Avoiding Tangled Work
+
+If substantial work (a new module, a big feature) is left uncommitted across sessions, don't start
+unrelated new work in the same shared files (`Core.lua`, `Options.lua`, `Debug.lua` are the usual
+ones - nearly every module touches them) without first doing one of:
+
+- Committing the in-progress work, even roughly. A rough WIP commit is trivial to split out later
+  with `git log`/`git rebase`; disentangling it from someone else's changes after the fact (once
+  both are mixed together uncommitted in the same files) is not - it can require `git stash` plus
+  manual conflict resolution to separate cleanly.
+- Putting it on a short-lived branch instead, if it's substantial enough that a WIP commit on
+  `main` feels premature.
+
+This isn't a standing branch-per-feature rule - just reach for one of these two whenever two
+unrelated pieces of work are going to be in flight at the same time.
+
 # Release Process
 
 When the user says they're ready for a release (e.g. "ready for a release", "let's prepare a
