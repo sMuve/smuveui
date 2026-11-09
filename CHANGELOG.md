@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.6.0 - 2026-11-09
+- New: Easy Fishing. With a fishing rod in your main hand, assign one key (Options -> QoL -> Fishing) to cast your line and reel in the catch once it's ready - no need to click the bobber, and the game's own bobber-ready icon shows automatically. The bite splash also plays louder while your line is out, with an adjustable boost slider (up to 5x). Off by default.
+
 ## 0.5.0 - 2026-11-06
 - New: Battle.net friends in your friends list are now tinted blue for Alliance or red for Horde, based on the faction of the character they're currently playing. Toggle in Options -> QoL -> Social.
 - New: SmuveUI's bundled Rajdhani font is now shared with other addons that support LibSharedMedia (WeakAuras, ForeverAuras, and similar), so it shows up as a pickable font there too.
