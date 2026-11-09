@@ -964,6 +964,17 @@ function S:Dump()
         end
     end
 
+    -- Easy fishing: cast/reel key state and the held-CVar session (see Modules\EasyFishing.lua).
+    debug.easyFishing = {}
+    local easyFishing = S.modules.EasyFishing
+    if easyFishing then
+        for key, value in pairs(easyFishing.debugState) do
+            table.insert(debug.easyFishing, tostring(key) .. "=" .. tostring(value))
+        end
+    else
+        table.insert(debug.easyFishing, "module not loaded")
+    end
+
     -- Modules that are switched off.
     debug.disabledModules = S.db.disabledModules
 

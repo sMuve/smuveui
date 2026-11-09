@@ -257,6 +257,92 @@ local function Button(layout, text, tooltip, onClick)
     return row, button
 end
 
+-- A button that captures the next key or mouse button pressed and stores it as a WoW binding
+-- string (e.g. "F", "SHIFT-F", "BUTTON4"); right-click clears it. Left/right mouse clicks can't
+-- be captured (the first is how you start/stop listening; both are reserved game-wide anyway).
+local function KeyBind(layout, text, tooltip, get, set)
+    local row = NextRow(layout, 26)
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("LEFT", 4, 0)
+    label:SetWidth(200)
+    label:SetJustifyH("LEFT")
+    label:SetText(text)
+
+    local button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    button:SetSize(150, 22)
+    button:SetPoint("LEFT", label, "RIGHT", 10, 0)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    AddTooltip(button, text, tooltip)
+
+    local listening = false
+
+    local function Refresh()
+        local key = get()
+        if listening then
+            button:SetText("Press a key...")
+        elseif key then
+            local ok, bindingText = pcall(GetBindingText, key)
+            button:SetText(ok and bindingText ~= "" and bindingText or key)
+        else
+            button:SetText("Not bound")
+        end
+    end
+
+    local function StopListening()
+        listening = false
+        button:EnableKeyboard(false)
+        button:SetScript("OnKeyDown", nil)
+        button:SetScript("OnMouseWheel", nil)
+        Refresh()
+    end
+
+    local function Capture(key)
+        set(key)
+        StopListening()
+    end
+
+    local MODIFIER_KEYS = { LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true, LALT = true, RALT = true }
+
+    local function WithModifiers(key)
+        local parts = {}
+        if IsAltKeyDown() then table.insert(parts, "ALT") end
+        if IsControlKeyDown() then table.insert(parts, "CTRL") end
+        if IsShiftKeyDown() then table.insert(parts, "SHIFT") end
+        table.insert(parts, key)
+        return table.concat(parts, "-")
+    end
+
+    local function StartListening()
+        listening = true
+        Refresh()
+        button:EnableKeyboard(true)
+        button:SetScript("OnKeyDown", function(_, key)
+            if key == "ESCAPE" then
+                StopListening()
+            elseif not MODIFIER_KEYS[key] then
+                Capture(WithModifiers(key))
+            end
+        end)
+        button:SetScript("OnMouseWheel", function(_, delta)
+            Capture(WithModifiers(delta > 0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN"))
+        end)
+    end
+
+    button:SetScript("OnClick", function(_, mouseButton)
+        if listening then
+            return
+        elseif mouseButton == "RightButton" then
+            Capture(nil)
+        else
+            StartListening()
+        end
+    end)
+
+    Refresh()
+    table.insert(refreshers, Refresh)
+    return row, button
+end
+
 -- Setting accessors -------------------------------------------------------------------------------
 
 -- module: a module name, a list of them, or nil to refresh nothing.
@@ -370,6 +456,19 @@ CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
     Checkbox(left, "Match window size",
         "A second or third damage meter window (opened from the damage meter's own UI) starts at the same size as the first, instead of the client's default.",
         Setting("qol", "matchDamageMeterSize", "DamageMeter"))
+
+    Header(left, "Fishing")
+    Checkbox(left, "Easy fishing",
+        "While a fishing rod is in your main hand: one key casts and reels in your line without clicking the bobber, and the bite splash plays louder. Both turn off the moment the rod comes off.",
+        Setting("qol", "easyFishing", "EasyFishing"))
+    KeyBind(left, "Fishing key",
+        "The key that casts your line, then reels in the catch once it's ready. Right-click this button to unbind it.",
+        function() return S.db.qol.easyFishingKey end,
+        function(value) S.db.qol.easyFishingKey = value; S:Refresh("EasyFishing") end)
+    local getBoost, setBoost = Setting("qol", "easyFishingBoost", "EasyFishing")
+    Slider(left, "Splash volume boost",
+        "How many times louder Sound Effects play while a bobber is active. Applies to the next cast.",
+        1, 5, 0.5, getBoost, setBoost, "x")
 
     Header(right, "Combat")
     Checkbox(right, "Combat indicator",
