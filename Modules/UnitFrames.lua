@@ -85,6 +85,27 @@ local function TrackClientColor(bar)
     end
 end
 
+local boundUnits = {} -- unit -> true once its bar is in `bars`
+
+-- Target-of-target's health bar isn't guaranteed to exist yet at Init, unlike Target/Focus's own
+-- bars (there from login) - TargetFrameToT/FocusFrameToT only get populated once the game has
+-- actually shown a target-of-target at least once. A single resolve attempt in Init() then
+-- permanently gave up on them, so their health bars never got registered in `bars` and never got
+-- class/reaction colored even once a real target-of-target later showed up. Retried here instead,
+-- from the ticker, until each unit's bar actually resolves.
+local function EnsureBars()
+    for unit, paths in pairs(FRAMES) do
+        if not boundUnits[unit] then
+            local bar = FindBar(paths)
+            if bar then
+                boundUnits[unit] = true
+                bars[bar] = unit
+                TrackClientColor(bar)
+            end
+        end
+    end
+end
+
 -- Reaction colors for units that aren't players (or players while class colors are off):
 -- the client's standard ones, red (hostile) to yellow (neutral) to green (friendly).
 local REACTION_FALLBACK = {
@@ -400,13 +421,7 @@ local function UpdateSoon()
 end
 
 function M:Init()
-    for unit, paths in pairs(FRAMES) do
-        local bar = FindBar(paths)
-        if bar then
-            bars[bar] = unit
-            TrackClientColor(bar)
-        end
-    end
+    EnsureBars()
     SetupNames()
     self:ApplyNameGlow()
     self:ApplyTotPosition()
@@ -427,6 +442,7 @@ function M:Init()
     end)
 
     C_Timer.NewTicker(REFRESH_INTERVAL, function()
+        EnsureBars()
         if Enabled() or next(colored) then
             M:UpdateAll()
         else
