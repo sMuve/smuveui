@@ -933,6 +933,112 @@ local function ApplyNameColor(frame, unit)
     pcall(PaintNameColor, name)
 end
 
+-- Cast bar -------------------------------------------------------------------------------------
+-- An enemy's cast bar sits exactly where the client puts it, in a fairly small font - lifted 2px
+-- and its spell/target text enlarged about 1.2x make both easier to read at a glance mid-fight.
+-- CastTargetNameText (who the cast is aimed at) is this client's own field, confirmed via
+-- reference addon BetterBlizzPlates (forever/modules/castbar.lua, castBar.CastTargetNameText) -
+-- plain Blizzard nameplate cast bars have no such text. Scoped to enemies; friendly plates are
+-- left exactly as the client draws them.
+local CASTBAR_Y_OFFSET = 2
+local CASTBAR_TEXT_SCALE = 1.2
+local castBarWidgetEnemy = setmetatable({}, { __mode = "k" })     -- widget -> true while its plate is an enemy's
+local castBarPositionHooked = setmetatable({}, { __mode = "k" })  -- CastBarsContainer -> true
+local castBarPositionApplied = setmetatable({}, { __mode = "k" }) -- CastBarsContainer -> y we last set it to
+local castBarFontHooked = setmetatable({}, { __mode = "k" })      -- cast bar fontstring -> true
+local castBarFontApplied = setmetatable({}, { __mode = "k" })     -- cast bar fontstring -> size we last set
+local nudgingCastBarPoint = false
+local scalingCastBarFont = false
+
+local function NudgeCastBarPosition(container)
+    if nudgingCastBarPoint or not Accessible(container) or not castBarWidgetEnemy[container] then
+        return
+    end
+    if container:GetNumPoints() == 0 then
+        return
+    end
+    local point, relativeTo, relativePoint, x, y = container:GetPoint(1)
+    if not point or S.IsSecret(x) or S.IsSecret(y) then
+        return
+    end
+    y = y or 0
+    if castBarPositionApplied[container] and math.abs(y - castBarPositionApplied[container]) < 0.01 then
+        return -- still our own nudge from last time; the client hasn't re-anchored it since
+    end
+    local target = y + CASTBAR_Y_OFFSET
+    nudgingCastBarPoint = true
+    container:SetPoint(point, relativeTo, relativePoint, x or 0, target)
+    nudgingCastBarPoint = false
+    castBarPositionApplied[container] = target
+end
+
+local function HookCastBarPosition(container)
+    if castBarPositionHooked[container] then
+        return
+    end
+    castBarPositionHooked[container] = true
+    -- The client re-anchors this along with the rest of the plate on a layout update; ours goes
+    -- back on.
+    hooksecurefunc(container, "SetPoint", function(self)
+        if not nudgingCastBarPoint then
+            pcall(NudgeCastBarPosition, self)
+        end
+    end)
+end
+
+local function ScaleCastBarFont(fontString)
+    if scalingCastBarFont or not Accessible(fontString) or not castBarWidgetEnemy[fontString] then
+        return
+    end
+    local file, size, flags = fontString:GetFont()
+    if not file or S.IsSecret(file) or S.IsSecret(size) then
+        return
+    end
+    if castBarFontApplied[fontString] and math.abs(size - castBarFontApplied[fontString]) < 0.01 then
+        return -- still our own scaled size; the client hasn't touched it since
+    end
+    local target = size * CASTBAR_TEXT_SCALE
+    scalingCastBarFont = true
+    fontString:SetFont(file, target, flags or "")
+    scalingCastBarFont = false
+    castBarFontApplied[fontString] = target
+end
+
+local function HookCastBarFont(fontString)
+    if castBarFontHooked[fontString] then
+        return
+    end
+    castBarFontHooked[fontString] = true
+    for _, method in ipairs({ "SetFont", "SetFontObject" }) do
+        hooksecurefunc(fontString, method, function(self)
+            pcall(ScaleCastBarFont, self)
+        end)
+    end
+end
+
+local function ApplyCastBarFontWidget(fontString, enemy)
+    if not fontString or not Accessible(fontString) then
+        return
+    end
+    castBarWidgetEnemy[fontString] = enemy or nil
+    HookCastBarFont(fontString)
+    pcall(ScaleCastBarFont, fontString)
+end
+
+local function ApplyCastBarLook(frame, enemy)
+    local container = frame.CastBarsContainer
+    if container and Accessible(container) then
+        castBarWidgetEnemy[container] = enemy or nil
+        HookCastBarPosition(container)
+        pcall(NudgeCastBarPosition, container)
+    end
+    local castBar = frame.castBar
+    if castBar and Accessible(castBar) then
+        ApplyCastBarFontWidget(castBar.Text, enemy)
+        ApplyCastBarFontWidget(castBar.CastTargetNameText, enemy)
+    end
+end
+
 -- Friendly nameplates --------------------------------------------------------------------------
 -- Both the "name only" simplification (health bar, cast bar, level badge and native buffs/
 -- debuffs all hidden) and the class colored name are native client behavior on this build,
@@ -1148,6 +1254,7 @@ function M:Bind(unit)
     pcall(ApplyNameColor, frame, unit)
     pcall(ApplyTextSizes, frame)
     pcall(ApplyNPCNameOnlyAlpha, frame)
+    pcall(ApplyCastBarLook, frame, enemy)
     -- Whole nameplate scale (every plate; the aura icons on it scale along).
     local scale = db.scale or 1
     if math.abs(frame:GetScale() - scale) > 0.001 then
