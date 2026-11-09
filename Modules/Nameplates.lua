@@ -934,55 +934,85 @@ local function ApplyNameColor(frame, unit)
 end
 
 -- Cast bar -------------------------------------------------------------------------------------
--- An enemy's cast bar sits exactly where the client puts it, in a fairly small font - lifted 2px
--- and its spell/target text enlarged about 1.2x make both easier to read at a glance mid-fight.
--- CastTargetNameText (who the cast is aimed at) is this client's own field, confirmed via
--- reference addon BetterBlizzPlates (forever/modules/castbar.lua, castBar.CastTargetNameText) -
--- plain Blizzard nameplate cast bars have no such text. Scoped to enemies; friendly plates are
+-- An enemy's cast bar is exactly as tall as the client draws it, in a fairly small font - grown
+-- 2px taller and its spell/target text enlarged about 1.2x make both easier to read at a glance
+-- mid-fight. CastTargetNameText (who the cast is aimed at) is this client's own field, confirmed
+-- via reference addon BetterBlizzPlates (forever/modules/castbar.lua, castBar.CastTargetNameText)
+-- - plain Blizzard nameplate cast bars have no such text. Scoped to enemies; friendly plates are
 -- left exactly as the client draws them.
-local CASTBAR_Y_OFFSET = 2
+--
+-- Growing castBar/CastBarsContainer's height directly (hooking their SetHeight/SetSize) never
+-- stuck - confirmed live, it stayed the client's original height no matter what. Reference addon
+-- muleyoUI's own Forever nameplate code (Modules/Forever/Nameplates/Health.lua) shows why: the
+-- client re-anchors castBar every layout pass with opposing-corner points (effectively a
+-- TOPLEFT+BOTTOMRIGHT pair), and two opposing corners silently redefine a frame's height from
+-- their own geometry - any SetHeight we apply in between gets thrown away by the next anchor
+-- pass without ever calling SetHeight/SetSize again, so hooking those methods has nothing to
+-- catch. muleyoUI's fix is to re-anchor castBar itself with same-edge points (BOTTOMLEFT +
+-- BOTTOMRIGHT, both on the bottom edge) instead, which don't constrain height at all, leaving
+-- SetHeight the only thing deciding it - done here too, every NamePlateUnitFrameMixin:UpdateAnchors
+-- call (the same hook point muleyoUI uses), since the client can re-clear our points at any time.
+local CASTBAR_HEIGHT_INCREASE = 2
 local CASTBAR_TEXT_SCALE = 1.2
-local castBarWidgetEnemy = setmetatable({}, { __mode = "k" })     -- widget -> true while its plate is an enemy's
-local castBarPositionHooked = setmetatable({}, { __mode = "k" })  -- CastBarsContainer -> true
-local castBarPositionApplied = setmetatable({}, { __mode = "k" }) -- CastBarsContainer -> y we last set it to
-local castBarFontHooked = setmetatable({}, { __mode = "k" })      -- cast bar fontstring -> true
-local castBarFontApplied = setmetatable({}, { __mode = "k" })     -- cast bar fontstring -> size we last set
-local nudgingCastBarPoint = false
+local castBarWidgetEnemy = setmetatable({}, { __mode = "k" }) -- fontstring -> true while its plate is an enemy's
+local castBarEnemyFrame = setmetatable({}, { __mode = "k" })  -- NamePlateUnitFrame -> true while it's an enemy's
+local castBarNativeHeight = setmetatable({}, { __mode = "k" })          -- castBar -> height before we touched it
+local castBarContainerNativeHeight = setmetatable({}, { __mode = "k" }) -- CastBarsContainer -> height before we touched it
+local castBarFontHooked = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> true
+local castBarFontApplied = setmetatable({}, { __mode = "k" }) -- cast bar fontstring -> size we last set
+local castBarAnchorsHooked = false
+local growingCastBarHeight = false
 local scalingCastBarFont = false
 
-local function NudgeCastBarPosition(container)
-    if nudgingCastBarPoint or not Accessible(container) or not castBarWidgetEnemy[container] then
+local function ReapplyCastBarHeight(frame)
+    if growingCastBarHeight or not Accessible(frame) or not castBarEnemyFrame[frame] then
         return
     end
-    if container:GetNumPoints() == 0 then
+    local container = frame.CastBarsContainer
+    local castBar = frame.castBar
+    if not container or not castBar or not Accessible(container) or not Accessible(castBar) then
         return
     end
-    local point, relativeTo, relativePoint, x, y = container:GetPoint(1)
-    if not point or S.IsSecret(x) or S.IsSecret(y) then
-        return
+
+    local containerNative = castBarContainerNativeHeight[container]
+    if not containerNative then
+        local height = container:GetHeight()
+        if not height or S.IsSecret(height) or height <= 0 then
+            return
+        end
+        containerNative = height
+        castBarContainerNativeHeight[container] = containerNative
     end
-    y = y or 0
-    if castBarPositionApplied[container] and math.abs(y - castBarPositionApplied[container]) < 0.01 then
-        return -- still our own nudge from last time; the client hasn't re-anchored it since
+    local barNative = castBarNativeHeight[castBar]
+    if not barNative then
+        local height = castBar:GetHeight()
+        if not height or S.IsSecret(height) or height <= 0 then
+            return
+        end
+        barNative = height
+        castBarNativeHeight[castBar] = barNative
     end
-    local target = y + CASTBAR_Y_OFFSET
-    nudgingCastBarPoint = true
-    container:SetPoint(point, relativeTo, relativePoint, x or 0, target)
-    nudgingCastBarPoint = false
-    castBarPositionApplied[container] = target
+
+    growingCastBarHeight = true
+    container:SetHeight(containerNative + CASTBAR_HEIGHT_INCREASE)
+    -- Same-edge points (both on the bottom) don't redefine height the way opposing corners do,
+    -- so SetHeight right after this is the one thing left deciding it.
+    castBar:ClearAllPoints()
+    castBar:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
+    castBar:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    castBar:SetHeight(barNative + CASTBAR_HEIGHT_INCREASE)
+    growingCastBarHeight = false
 end
 
-local function HookCastBarPosition(container)
-    if castBarPositionHooked[container] then
+local function HookCastBarAnchors()
+    if castBarAnchorsHooked or not NamePlateUnitFrameMixin then
         return
     end
-    castBarPositionHooked[container] = true
-    -- The client re-anchors this along with the rest of the plate on a layout update; ours goes
-    -- back on.
-    hooksecurefunc(container, "SetPoint", function(self)
-        if not nudgingCastBarPoint then
-            pcall(NudgeCastBarPosition, self)
-        end
+    castBarAnchorsHooked = true
+    -- One mixin-wide hook covers every plate, enemy or not; ReapplyCastBarHeight itself filters
+    -- to enemies. Fires after the client's own anchor pass, so ours is always the last word.
+    hooksecurefunc(NamePlateUnitFrameMixin, "UpdateAnchors", function(self)
+        pcall(ReapplyCastBarHeight, self)
     end)
 end
 
@@ -1026,12 +1056,9 @@ local function ApplyCastBarFontWidget(fontString, enemy)
 end
 
 local function ApplyCastBarLook(frame, enemy)
-    local container = frame.CastBarsContainer
-    if container and Accessible(container) then
-        castBarWidgetEnemy[container] = enemy or nil
-        HookCastBarPosition(container)
-        pcall(NudgeCastBarPosition, container)
-    end
+    castBarEnemyFrame[frame] = enemy or nil
+    HookCastBarAnchors()
+    pcall(ReapplyCastBarHeight, frame)
     local castBar = frame.castBar
     if castBar and Accessible(castBar) then
         ApplyCastBarFontWidget(castBar.Text, enemy)

@@ -470,6 +470,7 @@ CATEGORIES[5] = { key = "qol_fishing", title = "Fishing", indent = true, build =
         "The key that casts your line, then reels in the catch once it's ready. Right-click this button to unbind it.",
         function() return S.db.qol.easyFishingKey end,
         function(value) S.db.qol.easyFishingKey = value; S:Refresh("EasyFishing") end)
+    Note(layout, "Safe to reuse a key you already have bound elsewhere (e.g. F) - this only overrides it while a fishing rod is equipped, so your other binding keeps working everywhere else.")
     local getBoost, setBoost = Setting("qol", "easyFishingBoost", "EasyFishing")
     Slider(layout, "Splash volume boost",
         "How many times louder Sound Effects play while a bobber is active. Applies to the next cast.",
