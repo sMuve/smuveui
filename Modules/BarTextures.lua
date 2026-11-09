@@ -106,8 +106,11 @@ local function ApplyTexture(bar)
 end
 
 -- User Story 1: player and target frames -----------------------------------------------------------
--- Both follow the same "<Name>Content.<Name>ContentMain" nesting (confirmed via
--- Modules\UnitFrames.lua's FindBar and AlignManaText, which already resolve these same paths).
+-- Both follow the same "<Name>Content.<Name>ContentMain" nesting for the health bar (confirmed via
+-- Modules\UnitFrames.lua's FindBar and AlignManaText, which already resolve this same path). The
+-- mana bar does NOT follow the same shape on both: target's is a direct ".ManaBar" child (per
+-- AlignManaText), but player's sits one level deeper under ".ManaBarArea.ManaBar" - confirmed via
+-- BetterBlizzFrames' source, which touches both paths explicitly as two different shapes.
 
 local function ApplyUnitFrame(frameName)
     local main = S.Resolve(frameName .. "." .. frameName .. "Content." .. frameName .. "ContentMain")
@@ -116,7 +119,8 @@ local function ApplyUnitFrame(frameName)
     end
     local healthContainer = main.HealthBarsContainer
     ApplyTexture(healthContainer and healthContainer.HealthBar)
-    ApplyTexture(main.ManaBar)
+    local manaArea = main.ManaBarArea
+    ApplyTexture((manaArea and manaArea.ManaBar) or main.ManaBar)
 end
 
 local function ApplyToUnitFrames()
