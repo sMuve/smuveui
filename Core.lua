@@ -13,6 +13,7 @@ S.defaults = {
         darkness = 90,          -- percent; 90 means textures keep 10% of their brightness (Dark mode)
         classColorIntensity = 90, -- same, for Class color mode
         font = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf", -- "DEFAULT" keeps the client's fonts instead
+        barTexture = "DEFAULT", -- health/resource bar texture on player/target/party/raid/nameplates; "DEFAULT" keeps the client's own
         auraDurationSize = 12,
         auraBuffsPos = nil,     -- { point, x, y }; nil keeps the built-in default position. Debuffs
                                 -- anchors to the buffs container instead of having its own position.

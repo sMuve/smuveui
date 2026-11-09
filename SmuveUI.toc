@@ -13,6 +13,7 @@ Debug.lua
 
 Modules\DarkMode.lua
 Modules\Fonts.lua
+Modules\BarTextures.lua
 Modules\Tooltip.lua
 Modules\Auras.lua
 Modules\UnitFrames.lua
