@@ -410,6 +410,17 @@ CATEGORIES[1] = { key = "appearance", title = "Appearance", build = function(lay
         setFont(value)
         StaticPopup_Show("SMUVEUI_FONT_RELOAD")
     end)
+
+    local getBarTexture, setBarTexture = Setting("appearance", "barTexture", "BarTextures")
+    Dropdown(layout, "Bar Texture",
+        "The statusbar texture used for health and resource bars on the player, target, party, raid and nameplate frames.",
+        function()
+            local options = { { value = "DEFAULT", text = "Default (client texture)" } }
+            for _, texture in ipairs(S.modules.BarTextures:GetTextureList()) do
+                table.insert(options, { value = texture.name, text = texture.name })
+            end
+            return options
+        end, getBarTexture, setBarTexture)
 end }
 
 CATEGORIES[2] = { key = "qol", title = "QoL", build = function(layout)
@@ -858,6 +869,7 @@ end }
 local MODULE_NAMES = {
     DarkMode = { "Dark mode", "Dark or class-color tint of the default UI's frames, windows, minimap and menus." },
     Fonts = { "Global font", "The font chosen under Appearance." },
+    BarTextures = { "Bar Texture", "The global statusbar texture for health and resource bars." },
     Tooltip = { "Tooltip", "Dark tooltips and class colored names." },
     Auras = { "Player auras", "Your buffs and debuffs: black borders, duration and stacks inside the icon." },
     UnitFrames = { "Unit frames", "Class and reaction colored health bars, class colored names, your own name and the target's mana values." },
