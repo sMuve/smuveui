@@ -990,6 +990,46 @@ function S:Dump()
         table.insert(debug.easyFishing, "module not loaded")
     end
 
+    -- Bar Texture picker: current setting, what it resolves to, and each tracked bar's live
+    -- texture (atlas/file/fileID) vs. what this module captured as its "original" - to tell apart
+    -- a resolve-logic bug from a capture-logic bug when a bar renders wrong (see Modules\BarTextures.lua).
+    debug.barTextures = {}
+    local barTextures = S.modules.BarTextures
+    if barTextures and barTextures.DebugLines then
+        for _, line in ipairs(barTextures:DebugLines()) do
+            table.insert(debug.barTextures, line)
+        end
+    else
+        table.insert(debug.barTextures, "module not loaded")
+    end
+
+    -- UnitFrames' own class/reaction-color tracking per bar - whether it's touching a bar that
+    -- shouldn't be colored (e.g. a resource bar), and what it remembers as "the client's own
+    -- color" for each one it does track (see Modules\UnitFrames.lua).
+    debug.unitFramesColor = {}
+    local unitFrames = S.modules.UnitFrames
+    if unitFrames and unitFrames.DebugLines then
+        for _, line in ipairs(unitFrames:DebugLines()) do
+            table.insert(debug.unitFramesColor, line)
+        end
+    else
+        table.insert(debug.unitFramesColor, "module not loaded")
+    end
+
+    -- Enemy nameplate cast bar height-grow feature (see Modules\Nameplates.lua): whether the
+    -- client's own anchor-update function was found and hooked, and the target's cast
+    -- bar/container live vs. cached native heights - to tell "never hooked" apart from "hooked
+    -- but reverted" when the grown height doesn't stick.
+    debug.castBarHeight = {}
+    local nameplates = S.modules.Nameplates
+    if nameplates and nameplates.DebugLines then
+        for _, line in ipairs(nameplates:DebugLines()) do
+            table.insert(debug.castBarHeight, line)
+        end
+    else
+        table.insert(debug.castBarHeight, "module not loaded")
+    end
+
     -- Modules that are switched off.
     debug.disabledModules = S.db.disabledModules
 
