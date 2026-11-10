@@ -735,6 +735,20 @@ CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(la
             S:Refresh("Nameplates")
         end)
 
+    Header(layout, "Cast Bar (enemy nameplates)")
+    Slider(layout, "Height increase", "Grows the cast bar beyond its normal height.", 0, 20, 1,
+        function() return S.modules.Nameplates:GetCastBarHeightIncrease() end,
+        function(value)
+            S.db.nameplates.castBarHeightIncrease = value
+            S:Refresh("Nameplates")
+        end)
+    Slider(layout, "Text size", "Size of the cast bar's spell name and timer text, relative to its normal size.", 1, 2.5, 0.05,
+        function() return S.modules.Nameplates:GetCastBarFontScale() end,
+        function(value)
+            S.db.nameplates.castBarFontScale = value
+            S:Refresh("Nameplates")
+        end)
+
     Header(layout, "Name & Level")
     Slider(layout, "Name X offset", "Moves the name on enemy nameplates left (negative) or right.", -60, 60, 1, NP("nameX"))
     Slider(layout, "Name Y offset", "Moves the name on enemy nameplates down (negative) or up.", -10, 30, 1, NP("nameY"))
