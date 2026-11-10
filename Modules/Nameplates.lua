@@ -952,24 +952,71 @@ end
 -- BOTTOMRIGHT, both on the bottom edge) instead, which don't constrain height at all, leaving
 -- SetHeight the only thing deciding it - done here too, every NamePlateUnitFrameMixin:UpdateAnchors
 -- call (the same hook point muleyoUI uses), since the client can re-clear our points at any time.
-local CASTBAR_HEIGHT_INCREASE = 2
-local CASTBAR_TEXT_SCALE = 1.2
+-- Both read live from DB() (Options: Nameplates > Cast Bar) rather than being fixed, so the player
+-- can grow the cast bar and its text further than this default amount.
 local castBarWidgetEnemy = setmetatable({}, { __mode = "k" }) -- fontstring -> true while its plate is an enemy's
 local castBarEnemyFrame = setmetatable({}, { __mode = "k" })  -- NamePlateUnitFrame -> true while it's an enemy's
 local castBarNativeHeight = setmetatable({}, { __mode = "k" })          -- castBar -> height before we touched it
 local castBarContainerNativeHeight = setmetatable({}, { __mode = "k" }) -- CastBarsContainer -> height before we touched it
 local castBarFontHooked = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> true
+local castBarFontNative = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> its native (unscaled) size
 local castBarFontApplied = setmetatable({}, { __mode = "k" }) -- cast bar fontstring -> size we last set
 local castBarAnchorsHooked = false
 local growingCastBarHeight = false
 local scalingCastBarFont = false
+
+function M:GetCastBarHeightIncrease()
+    return DB().castBarHeightIncrease or 2
+end
+
+function M:GetCastBarFontScale()
+    return DB().castBarFontScale or 1.2
+end
+
+-- frame.castBar looked like a convenience alias Blizzard's own mixin sets to the same widget as
+-- frame.CastBarsContainer.castBar - confirmed live via /smuve dump that it is NOT reliable: on a
+-- plate that has never had an active cast yet, frame.castBar reads nil while the nested path
+-- already resolves to the real widget. Every cast bar feature (height, font scale, icon border)
+-- silently no-opped on such a plate as a result. The nested path is the one to trust.
+local function ResolveCastBar(frame)
+    local container = frame.CastBarsContainer
+    return container and container.castBar
+end
+
+-- Text (the spell name) and CastTargetNameText (who the enemy is casting on) - confirmed live via
+-- muleyoUI's own Forever nameplate source (Modules/Forever/Nameplates/Castbar.lua) as the actual
+-- working approach, after direct SetPoint hooks on these produced inconsistent/off-center results:
+-- muleyoUI never hooks either FontString's own SetPoint. It just re-applies these two plain
+-- anchors every time the client's UpdateAnchors runs (same hook point ReapplyCastBarHeight below
+-- already uses for the bar's own height) - Text stretched to the bar's full rect (TOPLEFT to
+-- BOTTOMRIGHT) with CENTER justify, so it reads centered both ways regardless of the bar's size;
+-- CastTargetNameText anchored TOP to the bar's BOTTOM, but only after SetWidth(0) - without that,
+-- the FontString keeps whatever fixed width Blizzard gave it, and a center/top anchor on a wide,
+-- left-justified box doesn't align with where the text actually renders (confirmed live: this was
+-- the actual bug in an earlier attempt, not the anchor point itself).
+local function RepositionCastBarText(castBar)
+    local text = castBar.Text
+    if text and Accessible(text) then
+        text:SetJustifyH("CENTER")
+        text:ClearAllPoints()
+        text:SetPoint("TOPLEFT", castBar, "TOPLEFT", 0, 0)
+        text:SetPoint("BOTTOMRIGHT", castBar, "BOTTOMRIGHT", 0, 0)
+    end
+    local targetText = castBar.CastTargetNameText
+    if targetText and Accessible(targetText) then
+        targetText:SetJustifyH("CENTER")
+        targetText:ClearAllPoints()
+        targetText:SetWidth(0)
+        targetText:SetPoint("TOP", castBar, "BOTTOM", 0, -2)
+    end
+end
 
 local function ReapplyCastBarHeight(frame)
     if growingCastBarHeight or not Accessible(frame) or not castBarEnemyFrame[frame] then
         return
     end
     local container = frame.CastBarsContainer
-    local castBar = frame.castBar
+    local castBar = ResolveCastBar(frame)
     if not container or not castBar or not Accessible(container) or not Accessible(castBar) then
         return
     end
@@ -993,14 +1040,16 @@ local function ReapplyCastBarHeight(frame)
         castBarNativeHeight[castBar] = barNative
     end
 
+    local increase = M:GetCastBarHeightIncrease()
     growingCastBarHeight = true
-    container:SetHeight(containerNative + CASTBAR_HEIGHT_INCREASE)
+    container:SetHeight(containerNative + increase)
     -- Same-edge points (both on the bottom) don't redefine height the way opposing corners do,
     -- so SetHeight right after this is the one thing left deciding it.
     castBar:ClearAllPoints()
     castBar:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
     castBar:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-    castBar:SetHeight(barNative + CASTBAR_HEIGHT_INCREASE)
+    castBar:SetHeight(barNative + increase)
+    pcall(RepositionCastBarText, castBar)
     growingCastBarHeight = false
 end
 
@@ -1024,10 +1073,21 @@ local function ScaleCastBarFont(fontString)
     if not file or S.IsSecret(file) or S.IsSecret(size) then
         return
     end
-    if castBarFontApplied[fontString] and math.abs(size - castBarFontApplied[fontString]) < 0.01 then
-        return -- still our own scaled size; the client hasn't touched it since
+    local applied = castBarFontApplied[fontString]
+    local native = castBarFontNative[fontString]
+    if not (applied and native and math.abs(size - applied) < 0.01) then
+        -- Either never scaled before, or the client just set a genuinely new size (not the one we
+        -- last applied) - either way, this is the new native baseline to scale from.
+        native = size
+        castBarFontNative[fontString] = native
     end
-    local target = size * CASTBAR_TEXT_SCALE
+    -- Re-derives the target from the cached native size and the CURRENT setting every time
+    -- (instead of just bailing out when the client hasn't touched it since), so a settings change
+    -- alone - with no SetFont from the client in between - still takes effect on the next refresh.
+    local target = native * M:GetCastBarFontScale()
+    if applied and math.abs(target - applied) < 0.01 then
+        return -- nothing to change
+    end
     scalingCastBarFont = true
     fontString:SetFont(file, target, flags or "")
     scalingCastBarFont = false
@@ -1055,14 +1115,199 @@ local function ApplyCastBarFontWidget(fontString, enemy)
     pcall(ScaleCastBarFont, fontString)
 end
 
+-- The cast bar's own Icon can't be repositioned directly - confirmed live via BugSack: hooking its
+-- SetPoint to re-anchor it threw a real error inside the client's own layout code
+-- (Blizzard_NamePlateCastingBar.lua's ApplyStyleAndAnchoring: "Cannot anchor to a region dependent
+-- on it"), since other elements (CastTargetIndicator, Spark, BorderShield) anchor relative to Icon
+-- internally and forcibly repositioning it breaks that chain. muleyoUI's own Forever nameplate
+-- source (Modules/Forever/Nameplates/Castbar.lua, SkinIcon) shows the actual working pattern, also
+-- used by BetterBlizzPlates for the same reason (border, not position, there): never touch Icon's
+-- own anchor at all. Create a separate icon frame + texture we fully own, mirror the spell texture
+-- onto it via a hook on Icon's own SetTexture, hide Icon itself (alpha 0, not Hide() - its own
+-- Show/Hide state is mirrored onto our clone instead, so anything that reads Icon:IsShown()
+-- elsewhere, like the border below, keeps working off the clone instead), and anchor the clone
+-- anywhere freely since nothing in the client depends on it.
+--
+-- Re-skinned (texture, size, position, shown state) from the cast bar's own OnEvent script, the
+-- same hook point muleyoUI uses - this fires on cast start/stop/update (Blizzard's cast bar
+-- template drives itself from UNIT_SPELLCAST_* via OnEvent), not on every UpdateAnchors tick like
+-- the height/text fixes above need; a plain hooksecurefunc can't hook a frame's script handler,
+-- hence HookScript here specifically.
+local castBarIconClone = setmetatable({}, { __mode = "k" }) -- castBar -> { frame, texture }
+local castBarIconCloneSourceHooked = setmetatable({}, { __mode = "k" }) -- Icon -> true
+local castBarIconEventHooked = setmetatable({}, { __mode = "k" })       -- castBar -> true
+local castBarIconBorder = setmetatable({}, { __mode = "k" })  -- castBar -> its 4 edge textures
+local castBarIconEnemy = setmetatable({}, { __mode = "k" })   -- castBar -> true while its plate is an enemy's
+
+-- The border is a fixed overlay on castBar, not on the clone, so it doesn't automatically hide
+-- when the icon does (no active cast, or hidden on a friendly plate) - synced explicitly here.
+-- Tracks the icon texture's own alpha, not clone.frame's shown state - the frame itself stays
+-- permanently shown now (see EnsureCastBarIconClone's comment on why), so it's no longer a useful
+-- signal for "is there actually an icon to put a border around" on its own.
+local function SyncCastBarIconBorder(texture, castBar)
+    local edges = castBarIconBorder[castBar]
+    if not edges then
+        return
+    end
+    local show = castBarIconEnemy[castBar] and texture:GetAlpha() > 0
+    for _, edge in ipairs(edges) do
+        edge:SetShown(show and true or false)
+    end
+end
+
+local SHIELD_ATLAS = "nameplates-InterruptShield" -- confirmed via /smuve dump as this client's own
+local ICON_DEFAULT_SIZE = 16 -- replaced by the bar's actual height as soon as that's readable
+
+-- clone.frame is never hidden once created - only its children's own alpha toggles. The shield's
+-- "shown" state is a secret/protected value on this client (confirmed live: evaluating it in plain
+-- Lua and/or/if logic silently throws, aborting the whole calling function inside its own pcall,
+-- which is why two earlier attempts at this left the shield permanently stuck). SetAlphaFromBoolean
+-- is the actual sanctioned way to consume a value like this - both muleyoUI and BetterBlizzPlates
+-- use it for exactly this case (confirmed via their source) - and it's used here with the "shown"
+-- argument straight from the hook callback, never read back or branched on in Lua. Had clone.frame
+-- itself follow Icon's shown state the same way the texture below does, a parent SetShown(false)
+-- would hide the shield with it regardless of the shield's own alpha (confirmed live via screenshot
+-- - the earlier version did exactly this, which is why staying permanently shown here matters).
+local function EnsureCastBarIconClone(castBar)
+    local clone = castBarIconClone[castBar]
+    if clone then
+        return clone
+    end
+    local icon = castBar.Icon
+    if not icon or not Accessible(icon) then
+        return nil
+    end
+    local cloneFrame = CreateFrame("Frame", nil, castBar)
+    cloneFrame:SetFrameLevel(castBar:GetFrameLevel() + 1)
+    local texture = cloneFrame:CreateTexture(nil, "ARTWORK")
+    texture:SetAllPoints(cloneFrame)
+    local shield = cloneFrame:CreateTexture(nil, "OVERLAY")
+    shield:SetPoint("CENTER", cloneFrame, "CENTER", 0, 0)
+    shield:SetAtlas(SHIELD_ATLAS, false)
+    shield:SetAlpha(0) -- default hidden until a real reading says otherwise
+    -- A default size up front, not left at 0x0 until the first successful resize in SkinCastBarIcon
+    -- - that resize is gated behind castBar:GetHeight() not being secret, and this client's own
+    -- combat protection can make that read secret right when a clone is first created.
+    cloneFrame:SetSize(ICON_DEFAULT_SIZE, ICON_DEFAULT_SIZE)
+    shield:SetSize(ICON_DEFAULT_SIZE, ICON_DEFAULT_SIZE)
+    clone = { frame = cloneFrame, texture = texture, shield = shield }
+    castBarIconClone[castBar] = clone
+
+    icon:SetAlpha(0)
+    if icon.SetIgnoreParentAlpha then
+        icon:SetIgnoreParentAlpha(false)
+    end
+    if not castBarIconCloneSourceHooked[icon] then
+        castBarIconCloneSourceHooked[icon] = true
+        hooksecurefunc(icon, "SetTexture", function(self, tex)
+            if tex then
+                pcall(texture.SetTexture, texture, tex)
+            end
+        end)
+        -- SetShown included alongside Show/Hide: confirmed live that Blizzard toggles this kind of
+        -- widget via SetShown(bool) directly, which doesn't dispatch through Show/Hide at all, so
+        -- hooking only those two left a clone stuck in whatever state it had at creation. Icon's own
+        -- shown state (unlike the shield's) hasn't shown any sign of being secret, so it's fine to
+        -- read back and branch on directly.
+        for _, method in ipairs({ "Show", "Hide", "SetShown" }) do
+            hooksecurefunc(icon, method, function(self)
+                pcall(function()
+                    texture:SetAlpha(self:IsShown() and 1 or 0)
+                    SyncCastBarIconBorder(texture, castBar)
+                end)
+            end)
+        end
+    end
+    local borderShield = castBar.BorderShield
+    if borderShield and Accessible(borderShield) then
+        borderShield:SetAlpha(0)
+        if borderShield.SetIgnoreParentAlpha then
+            borderShield:SetIgnoreParentAlpha(false)
+        end
+        if shield.SetAlphaFromBoolean then
+            pcall(shield.SetAlphaFromBoolean, shield, borderShield:IsShown(), 1, 0)
+        end
+        if not castBarIconCloneSourceHooked[borderShield] then
+            castBarIconCloneSourceHooked[borderShield] = true
+            hooksecurefunc(borderShield, "SetShown", function(self, shown)
+                if shield.SetAlphaFromBoolean then
+                    pcall(shield.SetAlphaFromBoolean, shield, shown, 1, 0)
+                end
+            end)
+        end
+    end
+    return clone
+end
+
+-- Icon sits left of the bar, outside it (not overlapping) - confirmed as the right placement via
+-- muleyoUI's own SkinIcon (SetPoint("RIGHT", castBar, "LEFT", -gap, 0)) and the user's own request.
+local ICON_GAP = 2
+
+local function SkinCastBarIcon(castBar)
+    local clone = EnsureCastBarIconClone(castBar)
+    if not clone then
+        return
+    end
+    local icon = castBar.Icon
+    -- select(1, pcall(...)) is the success boolean, not the function's own return value - confirmed
+    -- live as the actual bug behind an empty clone (SetTexture(true) silently did nothing).
+    -- select(2, ...) is the real first return value after that boolean.
+    local okTexture, currentTexture = pcall(icon.GetTexture, icon)
+    if okTexture and currentTexture then
+        clone.texture:SetTexture(currentTexture)
+    end
+    local size = castBar:GetHeight()
+    if size and not S.IsSecret(size) and size > 0 then
+        clone.frame:ClearAllPoints()
+        clone.frame:SetSize(size, size)
+        clone.frame:SetPoint("RIGHT", castBar, "LEFT", -ICON_GAP, 0)
+        clone.shield:SetSize(size, size)
+    end
+    clone.texture:SetAlpha(icon:IsShown() and 1 or 0)
+    SyncCastBarIconBorder(clone.texture, castBar)
+
+    local borderShield = castBar.BorderShield
+    if borderShield and Accessible(borderShield) and clone.shield.SetAlphaFromBoolean then
+        pcall(clone.shield.SetAlphaFromBoolean, clone.shield, borderShield:IsShown(), 1, 0)
+    end
+end
+
+local function HookCastBarIconEvents(castBar)
+    if castBarIconEventHooked[castBar] then
+        return
+    end
+    castBarIconEventHooked[castBar] = true
+    castBar:HookScript("OnEvent", function()
+        pcall(SkinCastBarIcon, castBar)
+    end)
+end
+
+local function ApplyCastBarIconBorder(castBar, enemy)
+    local clone = EnsureCastBarIconClone(castBar)
+    if not clone then
+        return
+    end
+    castBarIconEnemy[castBar] = enemy or nil
+    if not castBarIconBorder[castBar] then
+        -- Host is the clone frame itself, not castBar - AddBlackBorder's edges are OVERLAY-layer
+        -- textures, but drawn on castBar (a lower frame level than the clone, which sits one level
+        -- above it) they'd render BEHIND the clone's own icon texture, invisible. Same frame level
+        -- as the icon, and the OVERLAY/ARTWORK layer difference correctly puts the border on top.
+        castBarIconBorder[castBar] = AddBlackBorder(clone.frame, clone.frame, BORDER_SIZE)
+    end
+    HookCastBarIconEvents(castBar)
+    pcall(SkinCastBarIcon, castBar)
+end
+
 local function ApplyCastBarLook(frame, enemy)
     castBarEnemyFrame[frame] = enemy or nil
     HookCastBarAnchors()
     pcall(ReapplyCastBarHeight, frame)
-    local castBar = frame.castBar
+    local castBar = ResolveCastBar(frame)
     if castBar and Accessible(castBar) then
         ApplyCastBarFontWidget(castBar.Text, enemy)
         ApplyCastBarFontWidget(castBar.CastTargetNameText, enemy)
+        pcall(ApplyCastBarIconBorder, castBar, enemy)
     end
 end
 
@@ -1443,4 +1688,83 @@ end
 
 function M:IsSupported()
     return Supported()
+end
+
+-- Debug (/smuve dump): whether the client's own anchor-update function was actually found and
+-- hooked (if not, ReapplyCastBarHeight only ever runs once, at Bind, and the client's next own
+-- layout pass silently reverts it), plus the target's own cast bar/container live vs. cached
+-- native heights, to tell "never hooked" apart from "hooked but the cached native height is
+-- wrong" when the grown height doesn't stick (see ReapplyCastBarHeight above).
+function M:DebugLines()
+    local lines = {}
+    table.insert(lines, "NamePlateUnitFrameMixin=" .. tostring(NamePlateUnitFrameMixin) ..
+        " UpdateAnchors=" .. tostring(NamePlateUnitFrameMixin and NamePlateUnitFrameMixin.UpdateAnchors) ..
+        " castBarAnchorsHooked=" .. tostring(castBarAnchorsHooked))
+    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit and C_NamePlate.GetNamePlateForUnit("target")
+    local frame = plate and plate.UnitFrame
+    if not frame then
+        table.insert(lines, "no nameplate for the target")
+        return lines
+    end
+    table.insert(lines, "enemyFrame(tracked)=" .. tostring(castBarEnemyFrame[frame]))
+    local container = frame.CastBarsContainer
+    -- frame.castBar looked like a convenience alias Blizzard's own mixin sets, pointing at the
+    -- same widget as frame.CastBarsContainer.castBar - confirmed NOT reliable (nil on a plate that
+    -- never had an active cast yet); kept here only as a comparison against the nested path, which
+    -- is what the real code (ResolveCastBar) now uses.
+    local castBar = container and container.castBar
+    table.insert(lines, "frame.castBar=" .. tostring(frame.castBar) ..
+        " frame.CastBarsContainer.castBar=" .. tostring(castBar) ..
+        " same=" .. tostring(frame.castBar == castBar))
+    if container then
+        local okH, h = pcall(container.GetHeight, container)
+        table.insert(lines, "CastBarsContainer live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))) ..
+            " cached native=" .. tostring(castBarContainerNativeHeight[container]))
+    else
+        table.insert(lines, "no CastBarsContainer")
+    end
+    if castBar then
+        local okH, h = pcall(castBar.GetHeight, castBar)
+        table.insert(lines, "castBar live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))) ..
+            " cached native=" .. tostring(castBarNativeHeight[castBar]))
+        local okCount, numPoints = pcall(castBar.GetNumPoints, castBar)
+        table.insert(lines, "castBar numPoints=" .. (okCount and tostring(numPoints) or ("error:" .. tostring(numPoints))))
+        for i = 1, 2 do
+            local okPoint, point, relativeTo, relativePoint, x, y = pcall(castBar.GetPoint, castBar, i)
+            if okPoint then
+                table.insert(lines, "castBar point" .. i .. "=" .. tostring(point) .. ">" ..
+                    tostring(relativeTo and (relativeTo.GetName and relativeTo:GetName() or relativeTo)) ..
+                    ":" .. tostring(relativePoint) .. "(" .. tostring(x) .. "," .. tostring(y) .. ")")
+            else
+                table.insert(lines, "castBar point" .. i .. "=error:" .. tostring(point))
+            end
+        end
+        -- Where the increased height request came from: the icon/text anchor relative to castBar
+        -- itself, so growing the bar (which grows upward off a fixed bottom edge) can shift
+        -- whatever's anchored to its CENTER or TOP, instead of staying put at the bottom.
+        for _, widgetName in ipairs({ "Icon", "Text", "CastTargetNameText" }) do
+            local widget = castBar[widgetName]
+            if widget then
+                local okCountW, numPointsW = pcall(widget.GetNumPoints, widget)
+                table.insert(lines, "castBar." .. widgetName .. " numPoints=" ..
+                    (okCountW and tostring(numPointsW) or ("error:" .. tostring(numPointsW))))
+                local safeCount = (okCountW and not S.IsSecret(numPointsW) and numPointsW) or 0
+                for i = 1, safeCount do
+                    local okPoint, point, relativeTo, relativePoint, x, y = pcall(widget.GetPoint, widget, i)
+                    if okPoint then
+                        table.insert(lines, "castBar." .. widgetName .. " point" .. i .. "=" .. tostring(point) .. ">" ..
+                            tostring(relativeTo and (relativeTo.GetName and relativeTo:GetName() or relativeTo)) ..
+                            ":" .. tostring(relativePoint) .. "(" .. tostring(x) .. "," .. tostring(y) .. ")")
+                    else
+                        table.insert(lines, "castBar." .. widgetName .. " point" .. i .. "=error:" .. tostring(point))
+                    end
+                end
+            else
+                table.insert(lines, "no castBar." .. widgetName)
+            end
+        end
+    else
+        table.insert(lines, "no castBar")
+    end
+    return lines
 end
