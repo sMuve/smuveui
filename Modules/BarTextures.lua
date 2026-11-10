@@ -89,20 +89,40 @@ end
 -- picking "DEFAULT" restores exactly what that specific bar started with, instead of guessing a
 -- single hardcoded "default" path that might be wrong for some frame type (mirrors Fonts.lua's
 -- originalFonts table for the same reason).
+--
+-- Falls back to this known-good path (confirmed via BetterBlizzFrames' source as this client's
+-- own default bar fill) only if a bar's original truly can't be captured - never passes 0/nil to
+-- SetStatusBarTexture. GetTextureFileID() returning 0 ("no texture set yet") is a real case, not
+-- hypothetical: it's truthy in Lua, so an earlier version of this code accepted 0 as a captured
+-- "original" and rendered the personal resource display's health bar solid black.
+local FALLBACK_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-BarFill"
 local originals = {}
+
+local function CaptureOriginal(bar)
+    local current = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if not current then
+        return nil -- not textured yet; try again on the next apply
+    end
+    local fileID = current.GetTextureFileID and current:GetTextureFileID()
+    if fileID and fileID ~= 0 then
+        return fileID
+    end
+    local filePath = current.GetTexture and current:GetTexture()
+    if filePath and filePath ~= "" then
+        return filePath
+    end
+    return false -- genuinely nothing to capture; use FALLBACK_TEXTURE instead
+end
 
 local function ApplyTexture(bar)
     if not bar or not bar.SetStatusBarTexture or not Accessible(bar) then
         return
     end
     if originals[bar] == nil then
-        local current = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-        originals[bar] = (current and current.GetTextureFileID and current:GetTextureFileID())
-            or (current and current.GetTexture and current:GetTexture())
-            or false
+        originals[bar] = CaptureOriginal(bar)
     end
     local path = ResolveTexture(S.db.appearance.barTexture)
-    bar:SetStatusBarTexture(path or originals[bar] or nil)
+    bar:SetStatusBarTexture(path or originals[bar] or FALLBACK_TEXTURE)
 end
 
 -- User Story 1: player and target frames -----------------------------------------------------------
