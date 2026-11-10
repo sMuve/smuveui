@@ -104,6 +104,21 @@ local function EnsureBars()
             end
         end
     end
+    -- The personal resource display is its own frame (not part of FRAMES/FindBar's shape, and
+    -- always shows "player"), so it's bound separately here rather than through the FRAMES loop
+    -- above - a second, distinct bar mapped to the same "player" unit, reusing the same
+    -- bars/Paint/TrackClientColor machinery. Confirmed via /smuve dump that nothing colored this
+    -- bar before: it showed the client's own plain health-percent green, never class color.
+    if not boundUnits.playerPersonalResource then
+        local frame = PersonalResourceDisplayFrame
+        local container = frame and frame.HealthBarsContainer
+        local bar = container and container.healthBar
+        if bar and bar.SetStatusBarColor then
+            boundUnits.playerPersonalResource = true
+            bars[bar] = "player"
+            TrackClientColor(bar)
+        end
+    end
 end
 
 -- Reaction colors for units that aren't players (or players while class colors are off):
@@ -231,12 +246,13 @@ end
 -- portrait border), so its left/right values sit further out than the health values above them.
 -- They are moved in to line up with the health bar's values.
 
-local TEXT_INSET = 2 -- the client's distance between a bar's edge and its value text
 -- This never actually got applied until the HealthBarsContainer.LeftText/RightText lookup below
 -- was fixed (it was looking one level too deep, at the health BAR instead of its container, so
 -- this whole branch silently never ran before). +2 confirmed too high, -2 confirmed too low;
 -- splitting the difference.
 local MANA_TEXT_RAISE = 0
+local ALIGN_RETRY_ATTEMPTS = 5
+local ALIGN_RETRY_DELAY = 0.2 -- combat-protected reads clear almost immediately; a short retry covers it
 
 local function Number(value)
     if value == nil or S.IsSecret(value) then
@@ -245,7 +261,25 @@ local function Number(value)
     return value
 end
 
-local function AlignManaText(frameName)
+local AlignManaText -- forward-declared, retries itself
+
+-- A fallback that re-derives the overhang from GetLeft()/GetRight()/GetWidth() used to run here
+-- whenever GetCenter() was secret (combat). It could sign-flip: those getters go secret together
+-- with GetCenter() on this client, so it silently defaulted both widths to 0, sometimes landing
+-- leftOverhang/rightOverhang at zero or briefly negative mid target-change - which put the text
+-- past center, looking like it swapped sides, and the result stuck until the next target/focus
+-- change (this only re-runs on those events, not continuously). Retrying instead of guessing never
+-- renders a wrong position - worst case the text keeps whatever position it already had.
+local function RetryAlignManaText(frameName, attempt)
+    if attempt > ALIGN_RETRY_ATTEMPTS then
+        return
+    end
+    C_Timer.After(ALIGN_RETRY_DELAY, function()
+        pcall(AlignManaText, frameName, attempt + 1)
+    end)
+end
+
+AlignManaText = function(frameName, attempt)
     local main = S.Resolve(frameName .. ".TargetFrameContent.TargetFrameContentMain")
     local mana = main and main.ManaBar
     -- LeftText/RightText live on HealthBarsContainer itself, not nested under its HealthBar child
@@ -255,44 +289,30 @@ local function AlignManaText(frameName)
     if not mana or not health or not healthContainer then
         return
     end
-    -- Best: line up with the health values themselves, at the height of the mana bar's middle.
+    -- Line up with the health values themselves, at the height of the mana bar's middle.
     -- (Blizzard's own default already anchors the mana values to these same health text objects;
     -- this only adds the vertical correction below, on the same relationship.)
     local _, manaY = mana:GetCenter()
     local _, healthY = health:GetCenter()
-    if Number(manaY) and Number(healthY) and healthContainer.LeftText and healthContainer.RightText then
-        -- The offset is taken from the health value's own height (the bar's box is taller than its
-        -- visible part), so the mana values end up centered in the mana bar like on the player frame.
-        -- The target mana bar's visible part sits higher than the middle of its box (its mask is
-        -- shifted up), so the values are raised by that difference to look centered.
-        local _, textY = healthContainer.RightText:GetCenter()
-        local offsetY = (Number(textY) and (manaY - textY) or (manaY - healthY)) + MANA_TEXT_RAISE
-        if mana.LeftText then
-            mana.LeftText:ClearAllPoints()
-            mana.LeftText:SetPoint("LEFT", healthContainer.LeftText, "LEFT", 0, offsetY)
-        end
-        if mana.RightText then
-            mana.RightText:ClearAllPoints()
-            mana.RightText:SetPoint("RIGHT", healthContainer.RightText, "RIGHT", 0, offsetY)
-        end
+    if not (Number(manaY) and Number(healthY) and healthContainer.LeftText and healthContainer.RightText) then
+        -- Secret (combat-protected) read: leave the existing anchors alone rather than guess, and
+        -- try again shortly once the values are readable.
+        RetryAlignManaText(frameName, attempt or 1)
         return
     end
-
-    -- Fallback: move the values in by the mana bar's overhang.
-    local leftOverhang = (Number(health:GetLeft()) and Number(mana:GetLeft())) and (health:GetLeft() - mana:GetLeft())
-    local rightOverhang = (Number(health:GetRight()) and Number(mana:GetRight())) and (mana:GetRight() - health:GetRight())
-    if not leftOverhang or not rightOverhang then
-        -- Not laid out yet: from the bar widths, the overhang is the same on both sides.
-        local difference = ((Number(mana:GetWidth()) or 0) - (Number(health:GetWidth()) or 0)) / 2
-        leftOverhang, rightOverhang = difference, difference
-    end
+    -- The offset is taken from the health value's own height (the bar's box is taller than its
+    -- visible part), so the mana values end up centered in the mana bar like on the player frame.
+    -- The target mana bar's visible part sits higher than the middle of its box (its mask is
+    -- shifted up), so the values are raised by that difference to look centered.
+    local _, textY = healthContainer.RightText:GetCenter()
+    local offsetY = (Number(textY) and (manaY - textY) or (manaY - healthY)) + MANA_TEXT_RAISE
     if mana.LeftText then
         mana.LeftText:ClearAllPoints()
-        mana.LeftText:SetPoint("LEFT", mana, "LEFT", leftOverhang + TEXT_INSET, MANA_TEXT_RAISE)
+        mana.LeftText:SetPoint("LEFT", healthContainer.LeftText, "LEFT", 0, offsetY)
     end
     if mana.RightText then
         mana.RightText:ClearAllPoints()
-        mana.RightText:SetPoint("RIGHT", mana, "RIGHT", -(rightOverhang + TEXT_INSET), MANA_TEXT_RAISE)
+        mana.RightText:SetPoint("RIGHT", healthContainer.RightText, "RIGHT", 0, offsetY)
     end
 end
 
@@ -454,4 +474,23 @@ end
 function M:Refresh()
     self:UpdateAll()
     self:ApplyNameGlow()
+end
+
+-- Debug (/smuve dump): every tracked health bar this module colors, its remembered client color
+-- (captured via the SetStatusBarColor hook in TrackClientColor), and its current live color - to
+-- tell apart "we never touched this bar" from "we colored it and it's wrong" from "the client's
+-- own hook fired with an unexpected value" when a bar's color looks wrong.
+function M:DebugLines()
+    local lines = {}
+    for bar, unit in pairs(bars) do
+        local okColor, r, g, b = pcall(bar.GetStatusBarColor, bar)
+        local own = clientColor[bar]
+        table.insert(lines, string.format(
+            "unit=%s colored=%s clientColor=%s live=%s desaturated(client)=%s",
+            tostring(unit), tostring(colored[bar]),
+            own == false and "<unreadable>" or (own and string.format("%.2f,%.2f,%.2f", own[1], own[2], own[3]) or "nil"),
+            okColor and string.format("%.2f,%.2f,%.2f", r, g, b) or ("error:" .. tostring(r)),
+            tostring(clientDesaturated[bar])))
+    end
+    return lines
 end
