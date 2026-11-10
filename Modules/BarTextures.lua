@@ -98,22 +98,64 @@ end
 local FALLBACK_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-BarFill"
 local originals = {}
 
+-- Several of this client's own default bars (confirmed live: the personal resource display's
+-- health and power bars) are set via SetAtlas, not SetTexture/SetStatusBarTexture - the
+-- underlying Texture object's GetTextureFileID()/GetTexture() both still return the atlas's
+-- shared SHEET file, not the specific cropped region, so capturing only the raw file and later
+-- replaying it via SetStatusBarTexture stretches the whole uncropped sheet across the bar
+-- instead of the intended sub-region - confirmed live via /smuve dump as the actual cause of a
+-- bar rendering solid black, not the earlier (also real, but not the whole story) 0-fileID case.
 local function CaptureOriginal(bar)
     local current = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if not current then
         return nil -- not textured yet; try again on the next apply
     end
+    local atlas = current.GetAtlas and current:GetAtlas()
+    if atlas and atlas ~= "" then
+        return { atlas = atlas }
+    end
     local fileID = current.GetTextureFileID and current:GetTextureFileID()
     if fileID and fileID ~= 0 then
-        return fileID
+        return { texture = fileID }
     end
     local filePath = current.GetTexture and current:GetTexture()
     if filePath and filePath ~= "" then
-        return filePath
+        return { texture = filePath }
     end
     return false -- genuinely nothing to capture; use FALLBACK_TEXTURE instead
 end
 
+-- Confirmed live via /smuve dump: this client's StatusBar widgets have no SetStatusBarAtlas
+-- convenience method at all (bar.SetStatusBarAtlas was nil on every single bar dumped) - the
+-- previous version of this function called it anyway, which silently did nothing and fell through
+-- to FALLBACK_TEXTURE for every atlas-based bar. The atlas has to be set on the StatusBar's own
+-- inner fill texture object instead (the same object GetStatusBarTexture() returns, and the same
+-- one CaptureOriginal() above reads GetAtlas() from) - SetAtlas is a standard Texture method that
+-- does exist here.
+local function RestoreOriginal(bar, original)
+    if type(original) ~= "table" then
+        return false
+    end
+    if original.atlas then
+        local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+        if tex and tex.SetAtlas then
+            tex:SetAtlas(original.atlas, false)
+            return true
+        end
+    end
+    if original.texture then
+        bar:SetStatusBarTexture(original.texture)
+        return true
+    end
+    return false
+end
+
+-- A custom texture has no built-in inset the way the client's own atlas art does (confirmed this
+-- session: the client's edge mask stays attached to a custom texture too, so the "looks bigger"
+-- report is a pure shading/contrast illusion, not a lost crop). Tried and abandoned: an edge bevel
+-- baked into the texture's own pixels, a proportional version of the same, and SetScale(0.95) on
+-- the bar frame - each either did nothing or visibly broke some other bar type. Not pursuing this
+-- further; Default and a custom texture simply look slightly different in size, left as-is.
 local function ApplyTexture(bar)
     if not bar or not bar.SetStatusBarTexture or not Accessible(bar) then
         return
@@ -122,7 +164,11 @@ local function ApplyTexture(bar)
         originals[bar] = CaptureOriginal(bar)
     end
     local path = ResolveTexture(S.db.appearance.barTexture)
-    bar:SetStatusBarTexture(path or originals[bar] or FALLBACK_TEXTURE)
+    if path then
+        bar:SetStatusBarTexture(path)
+    elseif not RestoreOriginal(bar, originals[bar]) then
+        bar:SetStatusBarTexture(FALLBACK_TEXTURE)
+    end
 end
 
 -- User Story 1: player and target frames -----------------------------------------------------------
@@ -132,7 +178,28 @@ end
 -- AlignManaText), but player's sits one level deeper under ".ManaBarArea.ManaBar" - confirmed via
 -- BetterBlizzFrames' source, which touches both paths explicitly as two different shapes.
 
-local function ApplyUnitFrame(frameName)
+-- A plain (non-atlas) resource-bar texture carries no inherent color - the client's own atlas art
+-- supplied the mana/rage/energy tint, and nothing re-applies a tint on a plain SetStatusBarTexture
+-- call; only some later, unrelated unit-power event does (which is why this self-corrected on a
+-- target switch or a heal, but not immediately on its own). Confirmed via BetterBlizzFrames'
+-- ApplyTextureChange (forever/BetterBlizzFrames.lua): it explicitly sets the power-type color
+-- right after swapping a mana bar's texture, for exactly this reason. Default/atlas needs no such
+-- fix - the atlas art already supplies the correct color, confirmed already working above.
+local function ApplyResourceColor(bar, unit)
+    if not bar or not bar.SetStatusBarColor or not Accessible(bar) then
+        return
+    end
+    if not ResolveTexture(S.db.appearance.barTexture) then
+        return -- Default: the atlas art supplies the color, nothing to fix
+    end
+    local _, token = UnitPowerType(unit)
+    local color = token and PowerBarColor and PowerBarColor[token]
+    if color then
+        bar:SetStatusBarColor(color.r, color.g, color.b)
+    end
+end
+
+local function ApplyUnitFrame(frameName, unit)
     local main = S.Resolve(frameName .. "." .. frameName .. "Content." .. frameName .. "ContentMain")
     if not main then
         return
@@ -140,12 +207,14 @@ local function ApplyUnitFrame(frameName)
     local healthContainer = main.HealthBarsContainer
     ApplyTexture(healthContainer and healthContainer.HealthBar)
     local manaArea = main.ManaBarArea
-    ApplyTexture((manaArea and manaArea.ManaBar) or main.ManaBar)
+    local manaBar = (manaArea and manaArea.ManaBar) or main.ManaBar
+    ApplyTexture(manaBar)
+    ApplyResourceColor(manaBar, unit)
 end
 
 local function ApplyToUnitFrames()
-    ApplyUnitFrame("PlayerFrame")
-    ApplyUnitFrame("TargetFrame")
+    ApplyUnitFrame("PlayerFrame", "player")
+    ApplyUnitFrame("TargetFrame", "target")
 end
 
 -- User Story 2: party and raid frames ---------------------------------------------------------------
@@ -220,4 +289,129 @@ function M:Init()
     hooksecurefunc("CompactUnitFrame_SetUnit", function(frame) ApplyCompactFrame(frame) end)
     S:On("NAME_PLATE_UNIT_ADDED", function(_, unit) ApplyToNamePlateUnit(unit) end)
     S:On("PLAYER_ENTERING_WORLD", function() M:Apply() end)
+    -- Unlike party/raid (CompactUnitFrame_SetUnit) and nameplates (NAME_PLATE_UNIT_ADDED), the
+    -- target frame has no equivalent "a new unit is now shown here" hook of its own - without
+    -- this, acquiring a target after login left TargetFrame showing whatever it had at
+    -- PLAYER_ENTERING_WORLD (no target yet, or the client's own default) instead of the selected
+    -- texture, confirmed live: only the target frame drifted out of sync after a /reload.
+    S:On("PLAYER_TARGET_CHANGED", function() ApplyToUnitFrames() end)
+end
+
+-- Debug (/smuve dump) -------------------------------------------------------------------------------
+
+-- Researching the "custom texture looks slightly bigger than Default" report: whether Blizzard's
+-- own mask (a sibling MaskTexture, e.g. HealthBarMask, bigger than the bar itself - presumably
+-- carrying a built-in soft vignette) is still attached to GetStatusBarTexture() after we swap in a
+-- plain file texture, or whether the swap drops it. GetNumMaskTextures()/GetMaskTexture() read
+-- back what's actually attached, rather than assuming either way.
+local function DescribeMasks(tex, lines, prefix)
+    if not tex or not tex.GetNumMaskTextures then
+        table.insert(lines, prefix .. "masks: GetNumMaskTextures not available")
+        return
+    end
+    local okCount, count = pcall(tex.GetNumMaskTextures, tex)
+    if not okCount then
+        table.insert(lines, prefix .. "masks: error " .. tostring(count))
+        return
+    end
+    table.insert(lines, prefix .. "masks: count=" .. tostring(count))
+    for i = 1, (count or 0) do
+        local okMask, mask = pcall(tex.GetMaskTexture, tex, i)
+        if okMask and mask then
+            local okAtlas, atlas = mask.GetAtlas and pcall(mask.GetAtlas, mask)
+            atlas = okAtlas and atlas
+            local w, h = mask.GetSize and mask:GetSize()
+            table.insert(lines, prefix .. "  [" .. i .. "] atlas=" .. tostring(atlas) ..
+                " size=" .. tostring(w) .. "x" .. tostring(h))
+        else
+            table.insert(lines, prefix .. "  [" .. i .. "] error " .. tostring(mask))
+        end
+    end
+end
+
+local function DescribeBar(label, bar, lines)
+    if not bar then
+        table.insert(lines, label .. " = nil")
+        return
+    end
+    local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    local atlas = tex and tex.GetAtlas and tex:GetAtlas()
+    local file = tex and tex.GetTexture and tex:GetTexture()
+    local fileID = tex and tex.GetTextureFileID and tex:GetTextureFileID()
+    local captured = originals[bar]
+    local capturedDesc
+    if type(captured) == "table" then
+        capturedDesc = "atlas=" .. tostring(captured.atlas) .. " texture=" .. tostring(captured.texture)
+    else
+        capturedDesc = tostring(captured) .. " (type=" .. type(captured) .. ")"
+    end
+    local okColor, r, g, b = pcall(bar.GetStatusBarColor, bar)
+    table.insert(lines, string.format(
+        "%s live: atlas=%s file=%s fileID=%s color=%s | captured original: %s | tex.SetAtlas=%s",
+        label, tostring(atlas), tostring(file), tostring(fileID),
+        okColor and string.format("%.2f,%.2f,%.2f", r, g, b) or ("error:" .. tostring(r)),
+        capturedDesc, type(tex and tex.SetAtlas)))
+    DescribeMasks(tex, lines, label .. "  ")
+end
+
+-- Called from Debug.lua's S:Dump(); mirrors Modules\RaidFrames.lua's own debugState pattern.
+function M:DebugLines()
+    local classColor = S.GetClassColor and S:GetClassColor()
+    local lines = {
+        "S.db.appearance.barTexture = " .. tostring(S.db.appearance.barTexture),
+        "ResolveTexture(current) = " .. tostring(ResolveTexture(S.db.appearance.barTexture)),
+        "S:GetClassColor() = " .. (classColor and string.format("%.2f,%.2f,%.2f", classColor.r, classColor.g, classColor.b) or "n/a"),
+        "S.db.appearance.classColors = " .. tostring(S.db.appearance.classColors),
+    }
+    for _, unit in ipairs({ "player", "target" }) do
+        local okType, _, token = pcall(UnitPowerType, unit)
+        local color = okType and token and PowerBarColor and PowerBarColor[token]
+        table.insert(lines, string.format("UnitPowerType(%s) token=%s PowerBarColor=%s",
+            unit, tostring(token),
+            color and string.format("%.2f,%.2f,%.2f", color.r, color.g, color.b) or "nil"))
+    end
+    local prd = PersonalResourceDisplayFrame
+    table.insert(lines, "== PersonalResourceDisplayFrame")
+    if prd then
+        local container = prd.HealthBarsContainer
+        DescribeBar("healthBar", container and container.healthBar, lines)
+        DescribeBar("PowerBar", prd.PowerBar, lines)
+        DescribeBar("AlternatePowerBar (should stay untouched)", prd.AlternatePowerBar, lines)
+    else
+        table.insert(lines, "no PersonalResourceDisplayFrame global")
+    end
+    table.insert(lines, "== PlayerFrame")
+    local playerMain = S.Resolve("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain")
+    if playerMain then
+        local healthContainer = playerMain.HealthBarsContainer
+        DescribeBar("healthBar", healthContainer and healthContainer.HealthBar, lines)
+        if healthContainer and healthContainer.HealthBarMask then
+            local okA, atlas = pcall(healthContainer.HealthBarMask.GetAtlas, healthContainer.HealthBarMask)
+            local w, h = healthContainer.HealthBarMask:GetSize()
+            table.insert(lines, "  HealthBarMask sibling: atlas=" .. tostring(okA and atlas) .. " size=" .. tostring(w) .. "x" .. tostring(h))
+        else
+            table.insert(lines, "  no HealthBarMask sibling")
+        end
+        local manaArea = playerMain.ManaBarArea
+        DescribeBar("manaBar", (manaArea and manaArea.ManaBar) or playerMain.ManaBar, lines)
+    else
+        table.insert(lines, "no PlayerFrameContentMain")
+    end
+    table.insert(lines, "== TargetFrame")
+    local targetMain = S.Resolve("TargetFrame.TargetFrameContent.TargetFrameContentMain")
+    if targetMain then
+        local healthContainer = targetMain.HealthBarsContainer
+        DescribeBar("healthBar", healthContainer and healthContainer.HealthBar, lines)
+        if healthContainer and healthContainer.HealthBarMask then
+            local okA, atlas = pcall(healthContainer.HealthBarMask.GetAtlas, healthContainer.HealthBarMask)
+            local w, h = healthContainer.HealthBarMask:GetSize()
+            table.insert(lines, "  HealthBarMask sibling: atlas=" .. tostring(okA and atlas) .. " size=" .. tostring(w) .. "x" .. tostring(h))
+        else
+            table.insert(lines, "  no HealthBarMask sibling")
+        end
+        DescribeBar("manaBar", targetMain.ManaBar, lines)
+    else
+        table.insert(lines, "no TargetFrameContentMain")
+    end
+    return lines
 end
