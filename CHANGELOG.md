@@ -2,6 +2,17 @@
 
 All notable changes to this addon are documented here.
 
+## 0.7.0 - 2026-11-10
+- New: Raid/party frame buffs, debuffs, and defensive cooldowns, shown directly on each party/raid member's frame.
+- New: a global Bar Texture picker (Options -> Appearance -> Bar Texture) for health and resource bars on the player, target, party, raid, and nameplate frames, plus the personal resource display. Comes with four bundled textures, shared with other addons that support LibSharedMedia.
+- New: options to grow the cast bar's height and increase its spell-name/timer text size on enemy nameplates (Options -> Nameplates -> Cast Bar).
+- New: the enemy nameplate cast bar's spell icon now has the same black border as every other icon, including a "can't be interrupted" shield badge.
+- New: the personal resource display's health bar (the bar above your own character) is now class colored, matching the player and target frames.
+- Fixed the target-of-target health bar never getting class colored.
+- Fixed the target/focus frame's mana value text occasionally landing in the wrong position during combat.
+- Fixed custom bar textures turning solid black on bars that use the client's own atlas art (e.g. the personal resource display), not showing the correct color on resource bars, and the target frame falling out of sync with the chosen texture after a reload.
+- Consolidated the QoL options page into sub-categories to fit the settings sidebar.
+
 ## 0.6.0 - 2026-11-09
 - New: Easy Fishing. With a fishing rod in your main hand, assign one key (Options -> QoL -> Fishing) to cast your line and reel in the catch once it's ready - no need to click the bobber, and the game's own bobber-ready icon shows automatically. The bite splash also plays louder while your line is out, with an adjustable boost slider (up to 5x). Off by default.
 
