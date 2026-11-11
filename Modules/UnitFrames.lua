@@ -73,6 +73,20 @@ end
 local clientColor = setmetatable({}, { __mode = "k" })     -- bar -> { r, g, b } or false (unreadable)
 local clientDesaturated = setmetatable({}, { __mode = "k" }) -- bar -> boolean
 local painting = false
+local Paint -- forward declared: TrackClientColor's hooks below call it, but it's defined further down
+
+-- Whenever the client repaints a bar we're currently overriding (colored[bar] true), it does so on
+-- its own schedule (a health/target update), not ours - waiting for the next REFRESH_INTERVAL tick
+-- to put our color back left a brief flash of the client's own color/desaturation on screen first
+-- (confirmed live, most noticeable on the target-of-target frame, whose health bar the client
+-- repaints more often than it does target/focus). hooksecurefunc fires synchronously right after
+-- the client's own call, so reasserting here instead closes that window immediately.
+local function RepaintIfOverridden(bar)
+    local unit = bars[bar]
+    if unit and colored[bar] then
+        Paint(bar, unit)
+    end
+end
 
 local function TrackClientColor(bar)
     hooksecurefunc(bar, "SetStatusBarColor", function(self, r, g, b)
@@ -84,12 +98,17 @@ local function TrackClientColor(bar)
         else
             clientColor[self] = { r, g, b }
         end
+        RepaintIfOverridden(self)
     end)
     if bar.SetStatusBarDesaturated then
         hooksecurefunc(bar, "SetStatusBarDesaturated", function(self, desaturated)
-            if not painting and not S.IsSecret(desaturated) then
+            if painting then
+                return
+            end
+            if not S.IsSecret(desaturated) then
                 clientDesaturated[self] = desaturated and true or false
             end
+            RepaintIfOverridden(self)
         end)
     end
 end
@@ -156,7 +175,7 @@ local function BarColor(unit)
     return (db.classColors and ClassColor(unit)) or (db.reactionColors and ReactionColor(unit)) or nil
 end
 
-local function Paint(bar, unit)
+Paint = function(bar, unit)
     local color = BarColor(unit)
     painting = true
     if color then
