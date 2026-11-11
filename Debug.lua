@@ -1030,6 +1030,18 @@ function S:Dump()
         table.insert(debug.castBarHeight, "module not loaded")
     end
 
+    -- Dark mode panel coverage: whether a handful of reported-as-unskinned panels exist yet, were
+    -- ever walked by SkinFrame, and what pieces its texture-key/NineSlice checks found on them.
+    debug.darkModePanels = {}
+    local darkMode = S.modules.DarkMode
+    if darkMode and darkMode.DebugLines then
+        for _, line in ipairs(darkMode:DebugLines()) do
+            table.insert(debug.darkModePanels, line)
+        end
+    else
+        table.insert(debug.darkModePanels, "module not loaded")
+    end
+
     -- Modules that are switched off.
     debug.disabledModules = S.db.disabledModules
 

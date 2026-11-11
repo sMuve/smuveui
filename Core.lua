@@ -274,9 +274,15 @@ end
 -- dark tint is put back.
 
 local tracked = {}    -- texture -> brightness offset
-local originals = {}  -- texture -> { r, g, b, desaturated }
+local originals = {}  -- texture -> { r, g, b, desaturated, a }
 local conditions = {} -- texture -> function deciding whether it is dark (default: dark mode)
 local keepColor = {}  -- texture -> true: dim it, but don't flatten its own baked-in color to gray
+-- texture -> true: also force full alpha while dark - some panel background art (e.g. the combined
+-- bags frame's own Bg) is semi-transparent by design, which a color tint alone can't fix (SetVertexColor
+-- multiplies RGB, never alpha) - it still reads as a washed-out gray over whatever is behind it however
+-- dark the tint goes. Opt-in per texture since most panel art is already opaque and shouldn't be
+-- forced solid (that would be a visible, unwanted change for art meant to stay translucent).
+local opaque = {}
 local painting = false
 
 -- "off": neither mode. "dark": the original flat gray/black tint. "class": the same tint, but
@@ -346,11 +352,17 @@ local function Paint(texture)
                 texture:SetVertexColor(value, value, value)
             end
         end
+        if opaque[texture] then
+            texture:SetAlpha(1)
+        end
     else
         if texture.SetDesaturated then
             texture:SetDesaturated(original.desaturated)
         end
         texture:SetVertexColor(original.r, original.g, original.b)
+        if opaque[texture] then
+            texture:SetAlpha(original.a)
+        end
     end
     painting = false
 end
@@ -367,6 +379,15 @@ local function OnRecolored(texture)
             originals[texture].r, originals[texture].g, originals[texture].b = r, g, b
         end
     end
+    if opaque[texture] then
+        -- Same idea as keepColor's refresh above, for alpha instead of color: a genuine (not ours)
+        -- SetAlpha call is Blizzard setting the alpha it actually wants right now, so that's the new
+        -- baseline to restore to once dark mode (or this texture's own condition) goes false again.
+        local a = texture:GetAlpha()
+        if not S.IsSecret(a) then
+            originals[texture].a = a
+        end
+    end
     local condition = conditions[texture]
     if (condition and condition()) or (not condition and S:DarkModeActive()) then
         Paint(texture)
@@ -377,7 +398,8 @@ end
 -- keepTextureColor: dim the texture's own baked-in color instead of flattening it to gray - for
 -- art whose color is the point (the elite portrait wreath, say), where SetDesaturated(true) plus
 -- a gray vertex tint would otherwise erase it rather than just darkening it.
-function S:Darken(texture, offset, condition, keepTextureColor)
+-- forceOpaque: also force full alpha while dark - see `opaque` above for when this is needed.
+function S:Darken(texture, offset, condition, keepTextureColor, forceOpaque)
     if type(texture) ~= "table" or not texture.SetVertexColor or not texture.IsObjectType then
         return
     end
@@ -394,9 +416,14 @@ function S:Darken(texture, offset, condition, keepTextureColor)
         if S.IsSecret(desaturated) then
             desaturated = false
         end
+        local a = texture.GetAlpha and texture:GetAlpha()
+        if not a or S.IsSecret(a) then
+            a = 1
+        end
         originals[texture] = {
             r = r or 1, g = g or 1, b = b or 1,
             desaturated = desaturated or false,
+            a = a,
         }
         hooksecurefunc(texture, "SetVertexColor", OnRecolored)
         if texture.SetDesaturated then
@@ -406,12 +433,34 @@ function S:Darken(texture, offset, condition, keepTextureColor)
     tracked[texture] = offset or 0
     conditions[texture] = condition
     keepColor[texture] = keepTextureColor or nil
+    if forceOpaque and not opaque[texture] then
+        opaque[texture] = true
+        hooksecurefunc(texture, "SetAlpha", OnRecolored)
+    end
     Paint(texture)
 end
 
 -- /smuve dump only: whether S:Darken has ever actually run on this texture.
 function S.DarkModeDebugIsTracked(texture)
     return texture ~= nil and tracked[texture] ~= nil
+end
+
+-- /smuve dump only: tracked/opaque bookkeeping plus the texture's own live state, to tell "we never
+-- touched this" apart from "we set it, but something (ours or the client's) immediately changed it
+-- back" when a texture still doesn't look right after S:Darken/forceOpaque.
+function S.DarkModeDebugInfo(texture)
+    if texture == nil then
+        return "nil"
+    end
+    local okA, a = pcall(texture.GetAlpha, texture)
+    local okC, r, g, b = pcall(texture.GetVertexColor, texture)
+    local original = originals[texture]
+    return string.format(
+        "tracked=%s opaque=%s originalAlpha=%s liveAlpha=%s liveColor=%s",
+        tostring(tracked[texture]), tostring(opaque[texture] or false),
+        original and tostring(original.a) or "nil",
+        okA and tostring(a) or ("error:" .. tostring(a)),
+        okC and string.format("%.2f,%.2f,%.2f", r, g, b) or ("error:" .. tostring(r)))
 end
 
 local polled = {} -- texture -> true: tracked like S:Darken's, but never hooked (see below)

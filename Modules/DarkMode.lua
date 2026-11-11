@@ -475,6 +475,20 @@ local PANELS = {
     "PVPFrame", "HonorFrame", "SmuveUIOptionsFrame", "ColorPickerFrame", "StaticPopup1", "StaticPopup2",
     "StaticPopup3", "StaticPopup4", "CinematicFrameCloseDialog",
     "BarberShopFrame", "GroupLootHistoryFrame", "LootHistoryFrame", "ArenaFrame", "ProfessionsCustomerOrdersFrame",
+    -- LegacySystemFrame (the "Legacy Tree" talent-style window) and SocialUIFrame (the unified
+    -- Friends/Guild/Who window that replaced FriendsFrame on this build) - confirmed via /fstack
+    -- live as the actual frame names; neither was in this list at all, so they never got skinned.
+    "LegacySystemFrame", "SocialUIFrame",
+    -- GossipFrame (NPC dialogue options) and QuestFrame (the quest offer/detail/reward window) -
+    -- both confirmed live to have the exact same NineSlice border as every other panel here, just
+    -- were never in this list at all (a screenshot of QuestFrame specifically - accepting a quest,
+    -- not just talking to an NPC - showed the exact same untouched look GossipFrame had before it
+    -- was added). SkinFrame's own IsQuestPanel check still keeps their parchment untouched (see
+    -- SkinFrame's own comment) - it matches both of these names already.
+    "GossipFrame", "QuestFrame",
+    -- CompactRaidFrameManager (the Party/Raid control window - layout, pings, leave party) -
+    -- confirmed via /fstack as the actual frame name; never in this list at all.
+    "CompactRaidFrameManager",
     -- EditModeManagerFrame is deliberately NOT listed here: walking its frame tree with
     -- SkinFrame caused a reproducible Lua stack overflow (confirmed live), and it's Blizzard's
     -- own layout tool rather than a panel worth reskinning.
@@ -501,7 +515,14 @@ local TEXTURE_KEYS = {
 -- Panel backgrounds recognized by their texture, for windows built from client specific parts
 -- (the character window's pane backgrounds, stone strips, ...). Race / model art is left alone.
 -- TextureName gives "<atlas> <file>", so a name can end in a space.
-local BACKGROUND_PATTERNS = { "%-bg[%s%d]", "%-bg$", "stonebg", "%-background%s", "%-background$", "innertoptile" }
+-- "uiframemetal" added after GossipFrame's own portrait ring (atlas
+-- "gamepad-uiframemetal-largeportrait-focus" - this client reuses gamepad/console UI atlases for
+-- plain keyboard-and-mouse windows too, confirmed live via /smuve dump) stayed undarkened next to
+-- an otherwise fully dark window; this is a name-based pattern so it applies anywhere that family
+-- of metal-portrait-ring art turns up, not just on GossipFrame.
+local BACKGROUND_PATTERNS = {
+    "%-bg[%s%d]", "%-bg$", "stonebg", "%-background%s", "%-background$", "innertoptile", "uiframemetal",
+}
 
 local function IsPanelBackground(region)
     local name = TextureName(region)
@@ -562,8 +583,28 @@ local function IsQuestPanel(frame)
     return lower:find("quest") ~= nil or lower == "gossipframe" or lower == "itemtextframe"
 end
 
-local function SkinFrame(frame, depth)
-    if depth > 5 or frame:IsForbidden() or IsQuestPanel(frame) then
+local function SkinFrame(frame, depth, topQuestPanel)
+    if depth > 5 or frame:IsForbidden() then
+        return
+    end
+    -- topQuestPanel is computed ONCE, from the top-level panel this walk actually started from (the
+    -- PANELS entry - GossipFrame/QuestFrame/ItemTextFrame), then inherited unchanged through every
+    -- recursive call below - NOT recomputed fresh per nested frame. Recomputing it per-frame was the
+    -- actual bug behind QuestFrame's two undarkened strips: almost every one of its own legitimate
+    -- sub-frames (QuestFrameInset, QuestFrameProgressPanel, ...) is ALSO named with "quest" in it, so
+    -- the old per-frame check wrongly treated them as "nested foreign quest content" and bailed out
+    -- of them ENTIRELY (border included) - including QuestFrameProgressPanel, two levels down, whose
+    -- own "Material" pieces are exactly what the strips turned out to be (see further below).
+    if depth == 0 then
+        topQuestPanel = IsQuestPanel(frame)
+    end
+    -- A quest/dialogue window encountered NESTED inside some UNRELATED panel's frame tree (e.g. the
+    -- world map's embedded quest log pane) is never one of this addon's own panels, just along for
+    -- the ride while walking someone else's frame tree - left alone entirely, border included. Only
+    -- fires when the panel we started walking from ISN'T itself one of our own quest-style panels
+    -- (topQuestPanel false) - otherwise every nested piece of GossipFrame/QuestFrame's own subtree
+    -- gets skinned like normal below, parchment protection included.
+    if not topQuestPanel and depth > 0 and IsQuestPanel(frame) then
         return
     end
     local nineSlice = frame.NineSlice
@@ -579,8 +620,26 @@ local function SkinFrame(frame, depth)
         S:Darken(bg.Top)
         S:Darken(bg.Bottom)
     end
-    for _, key in ipairs(TEXTURE_KEYS) do
-        S:Darken(frame[key])
+    -- Newer Blizzard panels (the combined bags frame confirmed live, via /smuve dump) carry their
+    -- actual background as a "Bg" sub-FRAME, not a texture - a stretchy set of regions (a center
+    -- fill plus "uiframebackground-nineslice-corner..." atlas corners) whose field names (if any)
+    -- don't match TEXTURE_KEYS, and whose center fill has no atlas/file name at all for the
+    -- IsPanelBackground name-scan below to catch either. DarkenRegions catches all of it regardless
+    -- of name, the same way the window border NineSlice above does for its own regions.
+    local bgFrame = frame.Bg
+    if not topQuestPanel and type(bgFrame) == "table" and bgFrame.GetObjectType and bgFrame:GetObjectType() == "Frame" then
+        S:DarkenRegions(bgFrame)
+    end
+    -- Reverted to the blanket topQuestPanel skip (not a per-texture "parchment" name check) - confirmed
+    -- live that one of GossipFrame's Bg/Background fields darkened this way turned out to be a
+    -- shading layer drawn OVER the parchment itself (not named with "parchment" at all), so tinting
+    -- it visibly darkened the parchment text underneath even though the real "questbg-parchment"
+    -- texture was correctly left alone. Blanket-protecting both was wrong in a different way (left
+    -- two decorative strips undarkened), but darkening the parchment is the worse mistake of the two.
+    if not topQuestPanel then
+        for _, key in ipairs(TEXTURE_KEYS) do
+            S:Darken(frame[key])
+        end
     end
     for _, key in ipairs(HIDDEN_KEYS) do
         local texture = frame[key]
@@ -590,11 +649,30 @@ local function SkinFrame(frame, depth)
     end
     -- The streaks strip under the title bar also exists without that key (named differently or
     -- on a sub frame), so it is recognized by its texture too.
-    for _, region in ipairs({ frame:GetRegions() }) do
+    local regions = { frame:GetRegions() }
+    -- A window's NPC/player portrait (the actual face render, atlas "rtportrait*" - confirmed live
+    -- via /smuve dump on GossipFrame) always sits in its own small frame alongside its ring/border
+    -- art, as one or more sibling textures that match neither a TEXTURE_KEYS field name nor
+    -- IsPanelBackground's naming patterns, so they fell through every check here untouched (visible
+    -- live as GossipFrame's portrait ring staying undarkened next to an otherwise fully dark window).
+    -- The face itself is left alone; everything else sharing its frame is darkened like any other
+    -- panel art, the same fix benefiting any other panel with this same portrait-frame shape.
+    -- TextureName joins atlas and file path with a space (empty atlas leaves a leading space), so
+    -- this is a plain substring search, not an anchored "^rtportrait" - the portrait face here is a
+    -- plain file path ("rtportrait1"), not an atlas, confirmed live via /smuve dump.
+    local isPortraitFrame = false
+    for _, region in ipairs(regions) do
+        if region:IsObjectType("Texture") and TextureName(region):find("rtportrait", 1, true) then
+            isPortraitFrame = true
+            break
+        end
+    end
+    for _, region in ipairs(regions) do
         if region:IsObjectType("Texture") then
-            if TextureName(region):find("streak") then
+            local name = TextureName(region)
+            if name:find("streak") then
                 S:HideWhenDark(region)
-            elseif IsPanelBackground(region) then
+            elseif not topQuestPanel and not name:find("rtportrait", 1, true) and (IsPanelBackground(region) or isPortraitFrame) then
                 S:Darken(region)
             end
         end
@@ -605,6 +683,67 @@ local function SkinFrame(frame, depth)
             S:DarkenRegions(holder)
         end
     end
+    -- GossipFrame.GreetingPanel.ScrollBox.Shadows - the top/bottom scroll-fade gradient over the
+    -- parchment reading pane, confirmed live via /fstack as the topmost (highest frame level) thing
+    -- at that screen position. Didn't fix the strips on its own though - confirmed live (a second
+    -- /fstack at the same spot) that this frame has no visible texture of its own there (it's a
+    -- mouse-level-only hit, not what's actually painting the pixel); the two GLOBAL names also
+    -- listed at that same position, GossipFrameBg and GossipFrameMaterialBotLeft, are the actual
+    -- candidates - neither ever turned up in the recursive tree walk/dump (likely nested past its
+    -- depth cap, or not a true child of GossipFrame at all), so they're resolved directly by their
+    -- exact global name instead of relying on recursion to find them.
+    local shadows = frame.GreetingPanel and frame.GreetingPanel.ScrollBox and frame.GreetingPanel.ScrollBox.Shadows
+    if type(shadows) == "table" and shadows.GetObjectType then
+        if shadows:GetObjectType() == "Frame" then
+            S:DarkenRegions(shadows)
+        elseif shadows:IsObjectType("Texture") then
+            S:Darken(shadows)
+        end
+    end
+    if frame == GossipFrame then
+        for _, globalName in ipairs({ "GossipFrameBg", "GossipFrameMaterialBotLeft" }) do
+            local object = _G[globalName]
+            if type(object) == "table" and object.GetObjectType then
+                local objType = object:GetObjectType()
+                if objType == "Frame" then
+                    S:DarkenRegions(object)
+                elseif objType == "Texture" then
+                    S:Darken(object)
+                end
+            end
+        end
+    end
+    -- QuestFrame/QuestFrameInset: confirmed live via /fstack that the remaining top/bottom strips on
+    -- QuestFrame are its own direct regions - QuestFrameBg among them, the same "separate Bg global"
+    -- pattern as GossipFrameBg. Unlike GossipFrame though, QuestFrame's actual parchment lives in a
+    -- separate nested child frame (QuestFrameDetailPanel/GreetingPanel/...), never a direct region of
+    -- QuestFrame or QuestFrameInset themselves - confirmed by mirroring mUI's own approach exactly
+    -- (mUI:Skin(QuestFrame) / mUI:Skin(QuestFrameInset), a blanket darken of direct regions with no
+    -- name filtering at all, which is what their screenshot showed working correctly) - so a blanket
+    -- DarkenRegions on these two specifically, unlike the TEXTURE_KEYS/region-scan blanket skip
+    -- everywhere else in this subtree, can't accidentally reach the parchment.
+    if frame == QuestFrame or frame == QuestFrameInset then
+        S:DarkenRegions(frame)
+    end
+    -- QuestFrameProgressPanel.MaterialTopLeft/.SealMaterialBG - confirmed live via /fstack as the
+    -- decorative edge pieces behind QuestFrame's own parchment pane (the same two strips GossipFrame
+    -- had, just a field path here instead of a separate global). Matched generically by field name
+    -- rather than frame identity - this template name doesn't turn up anywhere else in the addon.
+    -- MaterialTopRight/MaterialBotRight added after a side-by-side screenshot against mUI showed a
+    -- strip still remaining at the top of QuestFrameDetailPanel specifically - mUI's own Blacklist.lua
+    -- names all four corners (ItemTextMaterialTopLeft/TopRight/BotLeft/BotRight) for this same style
+    -- of panel; only 2 of the 4 were in this list, confirmed live as the actual gap.
+    for _, key in ipairs({ "MaterialTopLeft", "MaterialTopRight", "MaterialBotLeft", "MaterialBotRight", "SealMaterialBG" }) do
+        local material = frame[key]
+        if type(material) == "table" and material.GetObjectType then
+            local objType = material:GetObjectType()
+            if objType == "Frame" then
+                S:DarkenRegions(material)
+            elseif objType == "Texture" then
+                S:Darken(material)
+            end
+        end
+    end
     for _, child in ipairs({ frame:GetChildren() }) do
         if not child:IsForbidden() then
             local objectType = child:GetObjectType()
@@ -613,7 +752,7 @@ local function SkinFrame(frame, depth)
             -- The NineSlice is done above with its own darker tint; walking into it again would
             -- re-darken its corners and edges at the normal (lighter) value.
             elseif objectType == "Frame" and child ~= nineSlice then
-                SkinFrame(child, depth + 1)
+                SkinFrame(child, depth + 1, topQuestPanel)
             end
         end
     end
@@ -626,12 +765,84 @@ local PANEL_TEXTURES = {
     "PaperDollInnerBorderTopRight", "PaperDollInnerBorderBottomLeft", "PaperDollInnerBorderBottomRight",
 }
 
+-- Equipment slot buttons on the paper doll: Buttons, which SkinFrame's own frame walk deliberately
+-- never reaches (see its header comment - this is what keeps item icons everywhere else untouched).
+-- Their own NormalTexture turned out to be a blank, fileless placeholder (confirmed live via
+-- /smuve dump: darkening it made no visible difference, since there was no image there to tint).
+-- The actual visible tan slot-background art is a "ui-character-info-gearslot" atlas texture
+-- nested one level deeper, in an unnamed child frame the button walk below has to find by name
+-- instead - same for "character-emptysocket" (the empty gem-socket backgrounds on the same slots).
+local SLOT_BG_ATLASES = { "ui-character-info-gearslot", "character-emptysocket" }
+
+local function DarkenSlotBackground(button)
+    -- The button's own NormalTexture (GetNormalTexture()) - confirmed live via /fstack
+    -- (fsobj = CharacterSecondaryHandSlotNormalTexture, hit directly on the visible border line) that
+    -- this IS rendering real, visible border art, contrary to an earlier, wrong conclusion: that
+    -- conclusion came from this file's own TextureName() helper reporting it as blank/nameless, which
+    -- only reads STRING file paths - a numeric fileID-based texture (this one) reports exactly the
+    -- same "blank" way despite showing a real image, so "blank name" was never actually proof of "no
+    -- visible content." NINESLICE_OFFSET for the same reason as below: its own bevel/highlight detail
+    -- needs to go darker than flat panel fill to read as fully dark next to a flat-black icon.
+    local normalTexture = button.GetNormalTexture and button:GetNormalTexture()
+    if normalTexture then
+        S:Darken(normalTexture, NINESLICE_OFFSET)
+    end
+    -- NINESLICE_OFFSET (not the default 0): confirmed live that the gearslot art's own baked-in
+    -- bevel/highlight detail still reads as a visible lighter outline around the icon even at the
+    -- normal darkness level, next to an icon dimmed flat black - the same "bright metal border needs
+    -- to go darker than flat panel fill" case NINESLICE_OFFSET exists for elsewhere in this file.
+    local borderFrame = button.BorderFrame
+    if type(borderFrame) == "table" and borderFrame.GetObjectType and borderFrame:GetObjectType() == "Frame" then
+        S:DarkenRegions(borderFrame, NINESLICE_OFFSET)
+    end
+    for _, region in ipairs({ button:GetRegions() }) do
+        if region:IsObjectType("Texture") then
+            -- TextureName joins atlas/file with a space (plain substring match, not an exact key
+            -- lookup - the joined string always carries a leading or trailing space alongside it).
+            local name = TextureName(region)
+            for _, atlas in ipairs(SLOT_BG_ATLASES) do
+                if name:find(atlas, 1, true) then
+                    -- forceOpaque: the same semi-transparent-by-design issue as the combined bags
+                    -- frame's own Bg (see its comment above) - a color tint alone leaves a
+                    -- translucent slot tray still showing the 3D character model through it.
+                    S:Darken(region, NINESLICE_OFFSET, nil, false, true)
+                    break
+                end
+            end
+        end
+    end
+    for _, child in ipairs({ button:GetChildren() }) do
+        if not child:IsForbidden() and child:GetObjectType() == "Frame" then
+            DarkenSlotBackground(child)
+        end
+    end
+end
+
+local SLOT_BUTTONS = {
+    "CharacterHeadSlot", "CharacterNeckSlot", "CharacterShoulderSlot", "CharacterBackSlot",
+    "CharacterChestSlot", "CharacterShirtSlot", "CharacterTabardSlot", "CharacterWristSlot",
+    "CharacterHandsSlot", "CharacterWaistSlot", "CharacterLegsSlot", "CharacterFeetSlot",
+    "CharacterFinger0Slot", "CharacterFinger1Slot", "CharacterTrinket0Slot", "CharacterTrinket1Slot",
+    "CharacterMainHandSlot", "CharacterSecondaryHandSlot", "CharacterRangedSlot",
+}
+
 local skinnedPanels = {}
 
 local function SkinPanel(panel)
     if S:DarkModeActive() then
         SkinFrame(panel, 0)
     end
+end
+
+-- The combined bags frame's own .Bg (and each individual ContainerFrame's, when combine-bags is
+-- off) is a sub-FRAME, not a texture (see SkinFrame's own Bg-as-frame handling above) - confirmed
+-- live via /smuve dump that two of its own regions (the rounded bottom corners) sit at alpha=0.8,
+-- not 1, which a color tint alone can't fix (SetVertexColor only ever multiplies RGB, never alpha).
+-- Forced fully opaque here instead, on top of (not instead of) the normal color darkening
+-- DarkenRegions already did on them.
+local BAG_BG_FRAMES = { "ContainerFrameCombinedBags" }
+for i = 1, 13 do
+    table.insert(BAG_BG_FRAMES, "ContainerFrame" .. i)
 end
 
 function M:SkinPanels()
@@ -649,6 +860,222 @@ function M:SkinPanels()
     for _, name in ipairs(PANEL_TEXTURES) do
         S:Darken(_G[name])
     end
+    for _, name in ipairs(SLOT_BUTTONS) do
+        local button = _G[name]
+        if button then
+            DarkenSlotBackground(button)
+        end
+    end
+    for _, name in ipairs(BAG_BG_FRAMES) do
+        local panel = _G[name]
+        local bgFrame = panel and panel.Bg
+        if type(bgFrame) == "table" and bgFrame.GetRegions then
+            for _, region in ipairs({ bgFrame:GetRegions() }) do
+                if region:IsObjectType("Texture") then
+                    S:Darken(region, 0, nil, false, true)
+                end
+            end
+        end
+    end
+end
+
+-- Debug (/smuve dump): whether a handful of panels - mostly ones reported as never getting
+-- darkened - actually exist yet, were ever walked by SkinFrame, and what pieces SkinFrame's
+-- texture-key/NineSlice checks actually found on them. CharacterFrame is included for contrast -
+-- a panel confirmed working, to tell "this frame's own structure doesn't match what SkinFrame
+-- looks for" apart from "SkinFrame isn't reaching this frame at all."
+local DEBUG_PANELS = {
+    "CharacterFrame", "GossipFrame",
+}
+
+function M:DebugLines()
+    local lines = { "DarkModeActive=" .. tostring(S:DarkModeActive()) }
+    for _, name in ipairs(DEBUG_PANELS) do
+        local frame = _G[name]
+        if not frame then
+            table.insert(lines, name .. ": <does not exist yet>")
+        else
+            local nineSlice = frame.NineSlice
+            local hasNineSlice = type(nineSlice) == "table" and nineSlice.GetObjectType and nineSlice:GetObjectType() == "Frame"
+            local keys = {}
+            for _, key in ipairs(TEXTURE_KEYS) do
+                if frame[key] then
+                    table.insert(keys, key)
+                end
+            end
+            local frameKeys = {}
+            for _, key in ipairs(FRAME_KEYS_ALL_TEXTURES) do
+                local holder = frame[key]
+                if type(holder) == "table" and holder.GetObjectType and holder:GetObjectType() == "Frame" then
+                    table.insert(frameKeys, key)
+                end
+            end
+            table.insert(lines, string.format(
+                "%s: skinned=%s nineSlice=%s textureKeys=[%s] frameKeys=[%s] BG=%s children=%d frameAlpha=%s",
+                name, tostring(skinnedPanels[frame] or false), tostring(hasNineSlice),
+                table.concat(keys, ","), table.concat(frameKeys, ","),
+                tostring(type(frame.BG)), select("#", frame:GetChildren()),
+                tostring(frame.GetAlpha and frame:GetAlpha())))
+            if frame.Background then
+                local bgType2 = frame.Background.GetObjectType and frame.Background:GetObjectType()
+                table.insert(lines, "  Background objectType=" .. tostring(bgType2)
+                    .. (bgType2 == "Texture" and (" name=" .. TextureName(frame.Background)) or "")
+                    .. " sameAsBg=" .. tostring(frame.Background == frame.Bg))
+                if bgType2 == "Texture" then
+                    table.insert(lines, "  Background: " .. S.DarkModeDebugInfo(frame.Background))
+                end
+            end
+            if frame.Bg then
+                local bgType = frame.Bg.GetObjectType and frame.Bg:GetObjectType()
+                table.insert(lines, "  Bg objectType=" .. tostring(bgType)
+                    .. (bgType == "Texture" and (" name=" .. TextureName(frame.Bg)) or ""))
+                if bgType == "Texture" then
+                    table.insert(lines, "  Bg: " .. S.DarkModeDebugInfo(frame.Bg))
+                elseif bgType == "Frame" then
+                    -- Bg is itself a sub-frame (a stretchable 3-slice background, say) - list what's
+                    -- actually inside it, since that's what would need darkening instead.
+                    for _, region in ipairs({ frame.Bg:GetRegions() }) do
+                        if region:IsObjectType("Texture") then
+                            local regionName = region.GetName and region:GetName()
+                            table.insert(lines, "  Bg region " .. tostring(type(regionName) == "string" and regionName or region)
+                                .. " name=" .. TextureName(region) .. " isPanelBg=" .. tostring(IsPanelBackground(region))
+                                .. " " .. S.DarkModeDebugInfo(region))
+                        end
+                    end
+                    for _, child in ipairs({ frame.Bg:GetChildren() }) do
+                        table.insert(lines, "  Bg child: " .. tostring(child:GetObjectType()))
+                    end
+                end
+            end
+            if hasNineSlice then
+                local pieces = {}
+                for _, child in ipairs({ nineSlice:GetRegions() }) do
+                    local objType = child.GetObjectType and child:GetObjectType()
+                    if objType == "Texture" then
+                        local key
+                        for _, k in ipairs(TEXTURE_KEYS) do
+                            if nineSlice[k] == child then
+                                key = k
+                                break
+                            end
+                        end
+                        table.insert(pieces, (key or "?") .. ":" .. S.DarkModeDebugInfo(child))
+                    end
+                end
+                table.insert(lines, "  NineSlice regions: " .. table.concat(pieces, " | "))
+            end
+            if frame.GetBackdropColor then
+                local okBackdrop, r, g, b, a = pcall(frame.GetBackdropColor, frame)
+                table.insert(lines, "  Backdrop color: " .. (okBackdrop and string.format("%.2f,%.2f,%.2f,%.2f", r, g, b, a) or "n/a"))
+            end
+        end
+    end
+
+    -- Full tree dump: every Texture region's name/color/tracked state, plus every Frame/Button
+    -- child, bounded to a few levels deep. Used below for two things the targeted checks above
+    -- didn't explain: (1) CharacterHeadSlot's NormalTexture turned out to already be a blank, file-
+    -- less white texture (darkening a texture with no image draws no visible change), so whatever
+    -- the user actually sees behind the icon must be a different region this walk will surface;
+    -- (2) GossipFrame's header/portrait area still reads undarkened after the NineSlice/TEXTURE_KEYS
+    -- fix, the same partial-coverage issue CharacterFrame itself needed extra handling for early on.
+    local function DumpTree(obj, out, prefix, depth)
+        if depth > 2 or #out > 400 or not obj or obj:IsForbidden() then
+            return
+        end
+        local okRegions, regions = pcall(function() return { obj:GetRegions() } end)
+        if okRegions then
+            for _, region in ipairs(regions) do
+                if region:IsObjectType("Texture") then
+                    table.insert(out, prefix .. "Texture " .. TextureName(region) .. " " .. S.DarkModeDebugInfo(region))
+                end
+            end
+        end
+        local okChildren, children = pcall(function() return { obj:GetChildren() } end)
+        if okChildren then
+            for i, child in ipairs(children) do
+                if i > 20 then
+                    table.insert(out, prefix .. "... (" .. (#children - 20) .. " more children)")
+                    break
+                end
+                if not child:IsForbidden() then
+                    local objType = child:GetObjectType()
+                    local childName = child.GetName and child:GetName()
+                    table.insert(out, prefix .. objType .. " " .. tostring(type(childName) == "string" and childName or "<unnamed>"))
+                    if objType == "Frame" or objType == "Button" or objType == "StatusBar" then
+                        DumpTree(child, out, prefix .. "  ", depth + 1)
+                    end
+                end
+            end
+        end
+    end
+
+    local slotButton = _G["CharacterHeadSlot"]
+    if slotButton then
+        table.insert(lines, "CharacterHeadSlot tree:")
+        DumpTree(slotButton, lines, "  ", 0)
+    else
+        table.insert(lines, "CharacterHeadSlot: <does not exist yet - open the character panel first>")
+    end
+
+    -- An EMPTY slot (no item equipped) showing a persistent white/gray border, confirmed by the user
+    -- to happen with no item in it - ruling out the quality-colored IconBorder (Character.lua hides
+    -- that one entirely when there's no item: GetInventoryItemQuality returns nil). Likeliest
+    -- remaining candidate: the icon texture's own built-in "empty slot" placeholder art, which this
+    -- addon's own code deliberately never touches (to avoid recoloring a real equipped item's icon)
+    -- - checked explicitly here since that exclusion would be the wrong call specifically while a
+    -- slot is empty (no real item art to protect).
+    local secondaryHand = _G["CharacterSecondaryHandSlot"]
+    if secondaryHand then
+        table.insert(lines, "CharacterSecondaryHandSlot tree:")
+        DumpTree(secondaryHand, lines, "  ", 0)
+        local icon = secondaryHand.icon or _G["CharacterSecondaryHandSlotIconTexture"]
+        if icon then
+            table.insert(lines, "CharacterSecondaryHandSlot icon name=" .. TextureName(icon) .. " " .. S.DarkModeDebugInfo(icon))
+        end
+        local borderFrame = secondaryHand.BorderFrame
+        table.insert(lines, "CharacterSecondaryHandSlot.BorderFrame=" .. tostring(borderFrame)
+            .. " objectType=" .. tostring(type(borderFrame) == "table" and borderFrame.GetObjectType and borderFrame:GetObjectType()))
+        if type(borderFrame) == "table" and borderFrame.GetObjectType and borderFrame:GetObjectType() == "Frame" then
+            table.insert(lines, "CharacterSecondaryHandSlot.BorderFrame tree:")
+            DumpTree(borderFrame, lines, "  ", 0)
+        end
+    end
+
+    local gossipFrame = _G["GossipFrame"]
+    if gossipFrame then
+        table.insert(lines, "GossipFrame tree:")
+        DumpTree(gossipFrame, lines, "  ", 0)
+        -- Explicit named-field lookups instead of relying on the tree walk finding them by luck -
+        -- the user pointed at two horizontal strips (above and below the parchment) that are still
+        -- untouched; TitleContainer (confirmed present via frameKeys above) and a separate
+        -- "Background" field (distinct from "Bg", also in textureKeys above) are the two likeliest
+        -- places for exactly that kind of strip art to live.
+        if gossipFrame.TitleContainer then
+            table.insert(lines, "GossipFrame.TitleContainer tree:")
+            DumpTree(gossipFrame.TitleContainer, lines, "  ", 0)
+        end
+        if gossipFrame.Background then
+            local bgType = gossipFrame.Background.GetObjectType and gossipFrame.Background:GetObjectType()
+            table.insert(lines, "GossipFrame.Background objectType=" .. tostring(bgType))
+            if bgType == "Texture" then
+                table.insert(lines, "  " .. S.DarkModeDebugInfo(gossipFrame.Background))
+            elseif bgType == "Frame" then
+                DumpTree(gossipFrame.Background, lines, "  ", 0)
+            end
+        end
+    end
+
+    -- QuestFrameGreetingPanel (the quest-list style dialogue, distinct from GossipFrame and from
+    -- QuestFrameDetailPanel/QuestFrameProgressPanel) still showed the same two strips after those
+    -- other two panels' own "Material*" fields got fixed - /fstack at that exact screen position hit
+    -- QuestFrameProgressPanel instead (same screen rect, higher frame level, not what's actually
+    -- rendering there), so its real structure is dumped directly here instead of guessed from fstack.
+    local questFrame = _G["QuestFrame"]
+    if questFrame and questFrame.GreetingPanel then
+        table.insert(lines, "QuestFrame.GreetingPanel tree:")
+        DumpTree(questFrame.GreetingPanel, lines, "  ", 0)
+    end
+    return lines
 end
 
 -- Calendar ---------------------------------------------------------------------------------------
@@ -768,6 +1195,38 @@ function M:Init()
             end
         end
     end)
+    -- Each paper doll slot rebuilds its own background art on update (confirmed live via /smuve
+    -- dump + screenshot: some slots kept the one-time SkinPanels() darkening, others - evidently
+    -- re-created or re-colored by this same update - had reverted back to the plain tan look),
+    -- so it's reasserted here every time instead of relying on a single pass at login.
+    if PaperDollItemSlotButton_Update then
+        hooksecurefunc("PaperDollItemSlotButton_Update", function(button)
+            if S:DarkModeActive() and button then
+                DarkenSlotBackground(button)
+            end
+        end)
+    end
+    -- QuestFrame's own sub-panels (GreetingPanel/DetailPanel/ProgressPanel/RewardPanel) are swapped
+    -- in and out of the SAME, continuously-visible QuestFrame window - switching between them never
+    -- fires QuestFrame's own OnShow again, so a sub-panel that's lazily created the first time THAT
+    -- specific panel is needed this session, after the one-time SkinPanels() OnShow pass already ran,
+    -- never got caught (confirmed live: QuestFrameGreetingPanel's strips stayed undarkened even after
+    -- QuestFrameDetailPanel's identical pieces got fixed, simply because Detail happened to exist
+    -- first). Re-skinning QuestFrame on each of these events - the same ones Blizzard itself uses to
+    -- switch between its sub-panels - keeps catching whichever one just appeared.
+    for _, event in ipairs({ "QUEST_GREETING", "QUEST_DETAIL", "QUEST_PROGRESS", "QUEST_COMPLETE" }) do
+        S:On(event, function()
+            if S:DarkModeActive() and QuestFrame then
+                -- One frame later: the sub-panel this event is about may not be fully built/shown
+                -- yet at the moment the event itself fires.
+                C_Timer.After(0, function()
+                    if S:DarkModeActive() and QuestFrame then
+                        SkinFrame(QuestFrame, 0)
+                    end
+                end)
+            end
+        end)
+    end
     -- Load-on-demand Blizzard windows (talents, auction house, ...) appear later.
     S:On("ADDON_LOADED", function()
         if S:DarkModeActive() then
