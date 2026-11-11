@@ -586,8 +586,11 @@ end
 -- Frame styling (health text, names, role icon, mouseover highlight)
 -- ============================================================================
 
--- Same proven order as Modules\UnitFrames.lua's own ClassColor: secrecy checked before "not" is
--- ever applied to a value that might be secret, never the other way around.
+-- Same proven order as Modules\UnitFrames.lua's own ClassColor. UnitClassBase, not UnitClass, and
+-- no issecretvalue gate on its result before using it - confirmed via BetterBlizzFrames' own
+-- forever-build class-color helper that C_ClassColor.GetClassColor tolerates a secret class token
+-- and still hands back a usable color table; a plain Lua "not class"/"IsSecret(class)" branch on
+-- it is what caused a target-of-target coloring bug in UnitFrames.lua, fixed the same way here.
 local function ClassColorFor(unit)
     local exists = UnitExists(unit)
     if S.IsSecret(exists) or not exists then
@@ -597,8 +600,8 @@ local function ClassColorFor(unit)
     if S.IsSecret(isPlayer) or not isPlayer then
         return nil
     end
-    local _, class = UnitClass(unit)
-    if not class or S.IsSecret(class) then
+    local class = UnitClassBase(unit)
+    if class == nil then
         return nil
     end
     return (C_ClassColor and C_ClassColor.GetClassColor(class)) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class])

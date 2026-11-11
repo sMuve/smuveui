@@ -51,8 +51,17 @@ local function ClassColor(unit)
     if S.IsSecret(isPlayer) or not isPlayer then
         return nil
     end
-    local _, class = UnitClass(unit)
-    if not class or S.IsSecret(class) then
+    -- UnitClassBase, not UnitClass, and no issecretvalue gate on its result before using it -
+    -- confirmed via BetterBlizzFrames' own forever-build class-color helper that
+    -- C_ClassColor.GetClassColor tolerates a secret class token and still hands back a usable
+    -- color table. A plain Lua "not class"/"IsSecret(class)" branch on it (the old code here) is
+    -- exactly what silently produced the default/white fallback whenever "targettarget" resolved
+    -- through an NPC's own target - confirmed live: wrong only in that case, never through a
+    -- player-owned target chain. The (C_ClassColor...) or (RAID_CLASS_COLORS...) fallback below
+    -- stays safe even with a secret class: "or" only evaluates the RAID_CLASS_COLORS index if
+    -- GetClassColor's result is falsy, so a secret class is never used to index that table directly.
+    local class = UnitClassBase(unit)
+    if class == nil then
         return nil
     end
     return (C_ClassColor and C_ClassColor.GetClassColor(class)) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class])

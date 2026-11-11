@@ -769,8 +769,13 @@ local function PlateClassColor(unit)
     if S.IsSecret(isPlayer) or not isPlayer then
         return nil
     end
-    local _, class = UnitClass(unit)
-    if not class or S.IsSecret(class) then
+    -- UnitClassBase, not UnitClass, and no issecretvalue gate on its result before using it -
+    -- confirmed via BetterBlizzFrames' own forever-build class-color helper that
+    -- C_ClassColor.GetClassColor tolerates a secret class token and still hands back a usable
+    -- color table (see Modules\UnitFrames.lua's own ClassColor for the full story - this was the
+    -- fix for a target-of-target coloring bug, applied here too since it's the same pattern).
+    local class = UnitClassBase(unit)
+    if class == nil then
         return nil
     end
     return (C_ClassColor and C_ClassColor.GetClassColor(class)) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[class])
