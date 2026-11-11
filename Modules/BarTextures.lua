@@ -98,6 +98,12 @@ end
 local FALLBACK_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-BarFill"
 local originals = {}
 
+-- PlayerFrame/TargetFrame's classic ManaBar -> the unit it belongs to, filled by ApplyUnitFrame()
+-- below. Lets the UnitFrameManaBar_UpdateType hook (see Init) know which unit's power type to
+-- read without having to re-walk the frame hierarchy on every call. Weak-keyed since these are
+-- the client's own frames, never meant to pin them alive.
+local manaBarUnit = setmetatable({}, { __mode = "k" })
+
 -- Several of this client's own default bars (confirmed live: the personal resource display's
 -- health and power bars) are set via SetAtlas, not SetTexture/SetStatusBarTexture - the
 -- underlying Texture object's GetTextureFileID()/GetTexture() both still return the atlas's
@@ -183,14 +189,31 @@ end
 -- call; only some later, unrelated unit-power event does (which is why this self-corrected on a
 -- target switch or a heal, but not immediately on its own). Confirmed via BetterBlizzFrames'
 -- ApplyTextureChange (forever/BetterBlizzFrames.lua): it explicitly sets the power-type color
--- right after swapping a mana bar's texture, for exactly this reason. Default/atlas needs no such
--- fix - the atlas art already supplies the correct color, confirmed already working above.
+-- right after swapping a mana bar's texture, for exactly this reason.
+--
+-- This used to skip entirely for Default, on the assumption its own atlas art always supplies the
+-- correct tint already. Confirmed wrong live: PlayerFrame/TargetFrame's classic ManaBar (unlike
+-- the personal resource display and party/raid frames, which this client's own code does keep
+-- correctly tinted) can land on - or revert to - Mana's blue even for classes/specs that never
+-- have Mana (warrior, rogue), with Default selected, and nothing else on this client ever
+-- corrects it. Runs unconditionally now; re-asserting an already-correct color is a harmless no-op.
+--
+-- Called both proactively (login/target-change/power-type-change events below) and reactively,
+-- right after the client's own UnitFrameManaBar_UpdateType runs (see Init) - confirmed via
+-- BetterBlizzFrames' source as the exact function Blizzard itself uses to tint this bar, and the
+-- one it hooks for the same reason: whatever makes this client's own tint land wrong sometimes,
+-- it happens inside (or because of) that call, so reasserting only beforehand isn't enough -
+-- nothing then corrects it until the next proactive trigger, which is why this looked
+-- "intermittent" rather than reliably reproducible from a single event.
 local function ApplyResourceColor(bar, unit)
     if not bar or not bar.SetStatusBarColor or not Accessible(bar) then
         return
     end
-    if not ResolveTexture(S.db.appearance.barTexture) then
-        return -- Default: the atlas art supplies the color, nothing to fix
+    -- An empty compact-frame slot (e.g. a pet row with no pet) still calls CompactUnitFrame_SetUnit,
+    -- but with frame.unit/displayedUnit both nil - confirmed live via BugSack: UnitPowerType errors
+    -- outright on a non-string argument, it doesn't just return no result.
+    if type(unit) ~= "string" then
+        return
     end
     local _, token = UnitPowerType(unit)
     local color = token and PowerBarColor and PowerBarColor[token]
@@ -209,6 +232,9 @@ local function ApplyUnitFrame(frameName, unit)
     local manaArea = main.ManaBarArea
     local manaBar = (manaArea and manaArea.ManaBar) or main.ManaBar
     ApplyTexture(manaBar)
+    if manaBar then
+        manaBarUnit[manaBar] = unit
+    end
     ApplyResourceColor(manaBar, unit)
 end
 
@@ -231,6 +257,7 @@ local function ApplyCompactFrame(frame)
     trackedCompactFrames[frame] = true
     ApplyTexture(frame.healthBar)
     ApplyTexture(frame.powerBar)
+    ApplyResourceColor(frame.powerBar, frame.displayedUnit or frame.unit)
 end
 
 local function ApplyToCompactFrames()
@@ -269,6 +296,31 @@ local function ApplyToPersonalResourceDisplay()
     local container = frame.HealthBarsContainer
     ApplyTexture(container and container.healthBar)
     ApplyTexture(frame.PowerBar)
+    ApplyResourceColor(frame.PowerBar, "player")
+end
+
+-- A power TYPE change (UNIT_DISPLAYPOWER - e.g. a druid shifting Caster/Cat/Bear form) swaps which
+-- color a bar should show without any texture change, target change, or PLAYER_ENTERING_WORLD -
+-- none of which ApplyToUnitFrames()/ApplyToCompactFrames()/ApplyToPersonalResourceDisplay()'s
+-- existing triggers cover. Without this, a bar colored for the unit's previous power type (most
+-- visibly: Mana's blue, since every class spends some time in a caster-like state) stays stuck
+-- that color indefinitely once a custom texture is in use, since nothing else ever re-tints it.
+local function ApplyResourceColorForUnit(unit)
+    if unit == "player" then
+        ApplyResourceColor(PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.PowerBar, "player")
+        local playerMain = S.Resolve("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain")
+        local manaArea = playerMain and playerMain.ManaBarArea
+        ApplyResourceColor((manaArea and manaArea.ManaBar) or (playerMain and playerMain.ManaBar), "player")
+    elseif unit == "target" then
+        local targetMain = S.Resolve("TargetFrame.TargetFrameContent.TargetFrameContentMain")
+        ApplyResourceColor(targetMain and targetMain.ManaBar, "target")
+    end
+    for frame in pairs(trackedCompactFrames) do
+        local frameUnit = frame.displayedUnit or frame.unit
+        if frameUnit == unit then
+            ApplyResourceColor(frame.powerBar, unit)
+        end
+    end
 end
 
 -- Lifecycle ------------------------------------------------------------------------------------------
@@ -289,6 +341,18 @@ function M:Init()
     hooksecurefunc("CompactUnitFrame_SetUnit", function(frame) ApplyCompactFrame(frame) end)
     S:On("NAME_PLATE_UNIT_ADDED", function(_, unit) ApplyToNamePlateUnit(unit) end)
     S:On("PLAYER_ENTERING_WORLD", function() M:Apply() end)
+    S:On("UNIT_DISPLAYPOWER", function(_, unit) ApplyResourceColorForUnit(unit) end)
+    -- Reactive half of the fix (see ApplyResourceColor's comment above): whatever call actually
+    -- lands PlayerFrame/TargetFrame's classic ManaBar on the wrong color happens inside Blizzard's
+    -- own UnitFrameManaBar_UpdateType, not only in response to events we can enumerate ourselves -
+    -- hooksecurefunc fires synchronously right after it, closing that window every single time it
+    -- runs, for any reason, rather than only at the specific moments this module already hooks.
+    hooksecurefunc("UnitFrameManaBar_UpdateType", function(bar)
+        local unit = manaBarUnit[bar]
+        if unit then
+            ApplyResourceColor(bar, unit)
+        end
+    end)
     -- Unlike party/raid (CompactUnitFrame_SetUnit) and nameplates (NAME_PLATE_UNIT_ADDED), the
     -- target frame has no equivalent "a new unit is now shown here" hook of its own - without
     -- this, acquiring a target after login left TargetFrame showing whatever it had at
