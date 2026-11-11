@@ -1011,13 +1011,18 @@ local function RepositionCastBarText(castBar)
     end
 end
 
-local function ReapplyCastBarHeight(frame)
-    if growingCastBarHeight or not Accessible(frame) or not castBarEnemyFrame[frame] then
+-- Pulled out of ReapplyCastBarHeight so it can also run from the cast bar's own OnEvent hook
+-- (HookCastBarIconEvents below) - confirmed live that the client resets castBar/container back to
+-- native height itself whenever a new cast starts (UNIT_SPELLCAST_START etc.), and that reset
+-- doesn't always run through NamePlateUnitFrameMixin:UpdateAnchors - the one hook ReapplyCastBarHeight
+-- used to rely on exclusively. Without this, the bar would flash back to native size at the start
+-- of a cast and only self-correct once some later, unrelated anchor pass happened to fire.
+local function ReapplyCastBarHeightCore(castBar)
+    if growingCastBarHeight or not Accessible(castBar) then
         return
     end
-    local container = frame.CastBarsContainer
-    local castBar = ResolveCastBar(frame)
-    if not container or not castBar or not Accessible(container) or not Accessible(castBar) then
+    local container = castBar:GetParent()
+    if not container or not Accessible(container) then
         return
     end
 
@@ -1051,6 +1056,17 @@ local function ReapplyCastBarHeight(frame)
     castBar:SetHeight(barNative + increase)
     pcall(RepositionCastBarText, castBar)
     growingCastBarHeight = false
+end
+
+local function ReapplyCastBarHeight(frame)
+    if not Accessible(frame) or not castBarEnemyFrame[frame] then
+        return
+    end
+    local castBar = ResolveCastBar(frame)
+    if not castBar then
+        return
+    end
+    ReapplyCastBarHeightCore(castBar)
 end
 
 local function HookCastBarAnchors()
@@ -1156,7 +1172,10 @@ local function SyncCastBarIconBorder(texture, castBar)
 end
 
 local SHIELD_ATLAS = "nameplates-InterruptShield" -- confirmed via /smuve dump as this client's own
-local ICON_DEFAULT_SIZE = 16 -- replaced by the bar's actual height as soon as that's readable
+-- Icon/shield render a bit larger than the cast bar's own height - matches muleyoUI/BBF's own
+-- icons looking bigger than a plain 1:1 bar-height crop, and was an explicit user request.
+local ICON_SCALE = 1.5
+local ICON_DEFAULT_SIZE = 16 * ICON_SCALE -- replaced by the bar's actual height as soon as that's readable
 
 -- clone.frame is never hidden once created - only its children's own alpha toggles. The shield's
 -- "shown" state is a secret/protected value on this client (confirmed live: evaluating it in plain
@@ -1258,6 +1277,7 @@ local function SkinCastBarIcon(castBar)
     end
     local size = castBar:GetHeight()
     if size and not S.IsSecret(size) and size > 0 then
+        size = size * ICON_SCALE
         clone.frame:ClearAllPoints()
         clone.frame:SetSize(size, size)
         clone.frame:SetPoint("RIGHT", castBar, "LEFT", -ICON_GAP, 0)
@@ -1279,6 +1299,12 @@ local function HookCastBarIconEvents(castBar)
     castBarIconEventHooked[castBar] = true
     castBar:HookScript("OnEvent", function()
         pcall(SkinCastBarIcon, castBar)
+        -- Catches the client's own native-height reset at the start of a new cast - see
+        -- ReapplyCastBarHeightCore's comment for why UpdateAnchors alone isn't a reliable enough
+        -- hook point for this on its own.
+        if castBarIconEnemy[castBar] then
+            pcall(ReapplyCastBarHeightCore, castBar)
+        end
     end)
 end
 
