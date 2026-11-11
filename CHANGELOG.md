@@ -2,6 +2,12 @@
 
 All notable changes to this addon are documented here.
 
+## 0.7.1 - 2026-11-11
+- Dark Mode now also covers windows that previously stayed in their default, undarkened look: the Legacy Tree, the Friends/Guild/Who window, NPC dialogue and quest windows, the combined bags window, the character sheet's equipment slots, and the party/raid control window.
+- Fixed the enemy nameplate cast bar resetting to its default height every time a new cast started, and enlarged its spell icon.
+- Fixed class coloring not applying to the target-of-target frame, a friendly nameplate's name, or a raid frame member in one specific situation: when the chain of targets passed through an NPC rather than another player.
+- Fixed unit frame health bars (most noticeable on the target-of-target frame) briefly flashing back to their default color before the correct class/reaction color reasserted itself.
+
 ## 0.7.0 - 2026-11-10
 - New: Raid/party frame buffs, debuffs, and defensive cooldowns, shown directly on each party/raid member's frame.
 - New: a global Bar Texture picker (Options -> Appearance -> Bar Texture) for health and resource bars on the player, target, party, raid, and nameplate frames, plus the personal resource display. Comes with four bundled textures, shared with other addons that support LibSharedMedia.
