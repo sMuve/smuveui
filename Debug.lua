@@ -420,10 +420,12 @@ function S:Dump()
     end
     table.sort(debug.nameplateCVars)
 
-    -- The game menu (Esc) and its buttons (open it once before dumping).
+    -- The game menu (Esc) and its buttons (open it once before dumping). Depth bumped from 3 to 6:
+    -- the main menu option buttons (Continue/Options/Logout/...) turned out to be nested deeper than
+    -- 3 levels - a depth-3 dump only ever reached the corner close (X) button, not any of them.
     debug.gameMenu = {}
     if GameMenuFrame then
-        Walk(GameMenuFrame, 0, 3, debug.gameMenu)
+        Walk(GameMenuFrame, 0, 6, debug.gameMenu)
     end
 
     -- The calendar (open it once before dumping).

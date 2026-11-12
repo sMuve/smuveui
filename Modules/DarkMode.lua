@@ -566,6 +566,32 @@ local function SkinTab(button)
     end
 end
 
+-- Buttons built from the client's ThreeSliceButtonMixin (Blizzard_SharedXML's
+-- ThreeSliceButtonTemplate.lua) - the game menu's own red action buttons (Continue, Options,
+-- Logout, ...) confirmed live via /smuve dump's gameMenu section to be exactly this: direct .Left/
+-- .Center/.Right texture children (atlas "128-RedButton-Left/-Center/-Right"), all at full
+-- undarkened color - the gold-trimmed end caps the user saw staying bright in dark mode. SkinFrame's
+-- generic child walk deliberately never recurses into Button widgets (see its own header comment),
+-- so these three pieces never reached any of its texture-darkening logic at all. Detected by this
+-- texture signature rather than by name/frame-list, so it also covers any other panel reusing the
+-- same template, not just GameMenuFrame.
+-- Darkening all three pieces tints the WHOLE button, not just the gold-trimmed .Left/.Right end
+-- caps - .Center is the button's own flat red fill, so the red goes dark along with the border.
+-- Confirmed live this is the look actually wanted here (a fully dark button, not a dark border on
+-- an otherwise still-red button), not an accidental side effect to walk back.
+local function IsThreeSliceButton(button)
+    local left, center, right = button.Left, button.Center, button.Right
+    return type(left) == "table" and left.IsObjectType and left:IsObjectType("Texture")
+        and type(center) == "table" and center.IsObjectType and center:IsObjectType("Texture")
+        and type(right) == "table" and right.IsObjectType and right:IsObjectType("Texture")
+end
+
+local function SkinThreeSliceButton(button)
+    S:Darken(button.Left)
+    S:Darken(button.Center)
+    S:Darken(button.Right)
+end
+
 -- Window borders (NineSlice) are bright metal; at the normal darkness their title band still
 -- reads as gray, so they go darker than the rest.
 local NINESLICE_OFFSET = -0.08
@@ -749,6 +775,8 @@ local function SkinFrame(frame, depth, topQuestPanel)
             local objectType = child:GetObjectType()
             if objectType == "Button" and IsTab(child) then
                 SkinTab(child)
+            elseif objectType == "Button" and IsThreeSliceButton(child) then
+                SkinThreeSliceButton(child)
             -- The NineSlice is done above with its own darker tint; walking into it again would
             -- re-darken its corners and edges at the normal (lighter) value.
             elseif objectType == "Frame" and child ~= nineSlice then
