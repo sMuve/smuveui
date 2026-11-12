@@ -87,6 +87,29 @@ end
 
 -- Layout apply ------------------------------------------------------------------------------------
 
+-- Creates every window the shared layout has beyond the ones this character already has.
+-- FCF_OpenNewWindow is the client's own window-creation function (used by its own chat menu's
+-- "New Window"). Confirmed via mUI's source (Modules/Forever/Chat/Profile.lua, same client) that
+-- calling it repeatedly in a plain, synchronous loop works - mUI also closes every existing extra
+-- window first, but that turned out not to be needed here: confirmed live on a genuinely fresh
+-- character (once CharacterKey's name-collision bug below was fixed) that this plain version
+-- creates every missing window correctly on its own.
+-- Returns true if it created at least one window (the reload prompt below needs to know).
+local function CreateMissingWindows(layout)
+    if not FCF_OpenNewWindow then
+        return false
+    end
+    local createdAny = false
+    for id = 1, MaxWindows() do
+        local window = layout.windows and layout.windows[id]
+        if window and window.name and window.name ~= "" and not GetChatWindowInfo(id) then
+            FCF_OpenNewWindow(window.name, true)
+            createdAny = true
+        end
+    end
+    return createdAny
+end
+
 -- Writes the stored layout into this character's chat settings. Returns true when anything changed.
 local function ApplyLayout(layout)
     local changed = false
@@ -210,8 +233,17 @@ local function Serialize(value)
     return tostring(value)
 end
 
+-- Plain UnitName("player") only ever returns this client's "first name" - confirmed live via
+-- /smuve dump's own debug.names section (which already called GetUnitName("player", true) for
+-- an unrelated reason): on a character actually named "Smuve Ul", UnitName("player") silently
+-- dropped the "Ul", returning just "Smuve". Two differently-named characters sharing that same
+-- first name ("Smuve Operator" and "Smuve Ul") then collided on the exact same chatReceived key,
+-- each one's login/share silently clobbering the other's "received" tracking - which is why
+-- sharing from one looked like it had already been received by the other that had never actually
+-- gotten anything. GetUnitName(unit, true) is what returns the full two-part name on this client.
 local function CharacterKey()
-    return (UnitName("player") or "?") .. "-" .. (GetRealmName() or "?")
+    local name = (GetUnitName and GetUnitName("player", true)) or UnitName("player") or "?"
+    return name .. "-" .. (GetRealmName() or "?")
 end
 
 local function MarkReceived(stamp)
@@ -219,10 +251,16 @@ local function MarkReceived(stamp)
     S.db.chatReceived[CharacterKey()] = stamp
 end
 
--- Stores a layout as the shared one when it differs from what is stored.
-local function Store(layout)
+-- Stores a layout as the shared one when it differs from what is stored. `force` skips that
+-- content check - confirmed live: pressing the options panel's Share button while the sharing
+-- character's own chat hadn't drifted since their last share did nothing at all (no new stamp),
+-- which silently stops every other character from ever retrying, even one that only partially
+-- received it. An explicit press should always re-push, regardless of whether anything changed;
+-- the check stays for the automatic logout capture, so an untouched session doesn't spam a new
+-- stamp (and therefore a reload prompt) on every character purely from logging in and back out.
+local function Store(layout, force)
     local current = S.db.chatLayout
-    if current and current.version == layout.version and Serialize(current) == Serialize(layout) then
+    if not force and current and current.version == layout.version and Serialize(current) == Serialize(layout) then
         return
     end
     layout.stamp = time() .. "-" .. math.random(1000000)
@@ -502,12 +540,20 @@ function M:Init()
             end
             local received = S.db.chatReceived and S.db.chatReceived[CharacterKey()]
             if S.db.qol.chatSync and layout and layout.version == 2 and layout.stamp and layout.stamp ~= received then
+                -- Window creation happens first (see CreateMissingWindows) and finishes
+                -- synchronously, so every window ApplyLayout is meant to configure already
+                -- exists by the time it starts - ApplyLayout itself never creates anything.
+                local okCreate, createdAny = pcall(CreateMissingWindows, layout)
+                if not okCreate then
+                    geterrorhandler()(createdAny)
+                    createdAny = false
+                end
                 local ok, changed = pcall(ApplyLayout, layout)
                 if not ok then
                     geterrorhandler()(changed)
                 else
                     MarkReceived(layout.stamp)
-                    if changed then
+                    if changed or createdAny then
                         -- Until the reload, the open chat windows still show the old layout.
                         StaticPopup_Show("SMUVEUI_CHAT_RELOAD")
                     end
@@ -543,12 +589,23 @@ function M:SaveNow()
         return
     end
     local layout = CaptureLayout()
-    Store(layout)
+    Store(layout, true)
     self.baseline = Serialize(layout)
 end
 
 function M:IsAvailable()
     return not ChattynatorActive()
+end
+
+-- /smuve chatresync: clears this character's own "received" marker for the current shared
+-- layout, so the next /reload re-applies it from scratch - without this, a character that's
+-- already marked as received (even one whose own apply silently fell short, or one that got
+-- marked purely by pressing Share itself, capturing its own incomplete setup) has no way to
+-- retry without someone else pushing out a genuinely new layout first.
+function M:ResetReceived()
+    if S.db.chatReceived then
+        S.db.chatReceived[CharacterKey()] = nil
+    end
 end
 
 -- Turning the history option on after login (it defaults to on) starts it without a reload.

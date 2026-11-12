@@ -606,6 +606,8 @@ SLASH_SMUVEUI3 = "/smuveui"
 -- /smuve cleardump          removes them again
 -- /smuve modules            list modules and whether they run
 -- /smuve disable <Module>   / enable <Module>: switch a module off/on (after a /reload)
+-- /smuve chatresync         re-applies the shared chat layout on /reload, even if this
+--                           character already received it (see Modules\Chat.lua)
 SlashCmdList.SMUVEUI = function(input)
     local command, argument = (input or ""):match("^%s*(%S*)%s*(.-)%s*$")
     command = command:lower()
@@ -614,6 +616,13 @@ SlashCmdList.SMUVEUI = function(input)
     elseif command == "cleardump" then
         S.db.debug = nil
         S.Print("Diagnostics removed.")
+    elseif command == "chatresync" then
+        if S.modules.Chat and S.modules.Chat.ResetReceived then
+            S.modules.Chat:ResetReceived()
+            S.Print("Cleared. /reload now to re-apply the shared chat layout.")
+        else
+            S.Print("Chat module not available.")
+        end
     elseif command == "modules" then
         for _, module in ipairs(S.moduleOrder) do
             S.Print(module.name .. ": " .. (S:IsModuleDisabled(module.name) and "|cffff4040disabled|r" or "|cff40ff40on|r"))
