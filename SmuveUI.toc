@@ -31,6 +31,7 @@ Modules\ItemDelete.lua
 Modules\WhisperSound.lua
 Modules\EasyFishing.lua
 Modules\AutoVendor.lua
+Modules\AutoOpenClams.lua
 Modules\DamageMeter.lua
 Modules\ObjectiveTracker.lua
 Modules\QuestSparkle.lua

@@ -1044,6 +1044,31 @@ function S:Dump()
         table.insert(debug.darkModePanels, "module not loaded")
     end
 
+    -- Auto-Open Clams (specs\011-auto-open-clams): candidate items for the still-unverified clam
+    -- allowlist in Modules\AutoOpenClams.lua. A loose "name contains clam" substring match - only
+    -- ever used here, for one-time manual discovery, never by the feature itself (see that
+    -- module's own comment on why a substring match isn't safe to actually act on).
+    debug.bagClamCandidates = {}
+    for bagID = 0, NUM_BAG_SLOTS do
+        local slots = C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bagID)
+            or (GetContainerNumSlots and GetContainerNumSlots(bagID)) or 0
+        for slotID = 1, slots do
+            local link, itemID
+            if C_Container and C_Container.GetContainerItemInfo then
+                local info = C_Container.GetContainerItemInfo(bagID, slotID)
+                link, itemID = info and info.hyperlink, info and info.itemID
+            elseif GetContainerItemInfo then
+                local _, _, _, _, _, _, containerLink, _, _, containerItemID = GetContainerItemInfo(bagID, slotID)
+                link, itemID = containerLink, containerItemID
+            end
+            local name = link and GetItemInfo(link)
+            if type(name) == "string" and name:lower():find("clam") then
+                table.insert(debug.bagClamCandidates, string.format("bag=%d slot=%d name=%s itemID=%s",
+                    bagID, slotID, name, tostring(itemID)))
+            end
+        end
+    end
+
     -- Modules that are switched off.
     debug.disabledModules = S.db.disabledModules
 

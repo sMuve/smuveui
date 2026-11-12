@@ -447,6 +447,9 @@ CATEGORIES[3] = { key = "qol_loot_vendors", title = "Loot & Vendors", indent = t
     if S.IsAddOnLoaded("BetterGroupLoot") then
         Note(left, "BetterGroupLoot is loaded and replaces the roll frames, so the tracker is inactive.")
     end
+    Checkbox(left, "Auto open clams",
+        "Opens any clam sitting in your bags on its own, the moment it shows up - no other container (lockboxes, wrapped gifts, ...) is ever touched. Never acts while you're in combat.",
+        Setting("qol", "autoOpenClams"))
 
     Header(right, "Vendors")
     Checkbox(right, "Auto sell junk",

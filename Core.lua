@@ -45,6 +45,7 @@ S.defaults = {
         lootRollUnlocked = false, -- always off after a reload; drag the window while it's on
         autoSellJunk = false,     -- sells poor-quality items the moment a vendor window opens
         autoRepair = false,       -- repairs all equipped gear the moment a vendor window opens
+        autoOpenClams = false,    -- opens any known clam item the moment it shows up in bags
         hideObjectiveTracker = false,  -- only acts while RestedXP, Journey or Polestar is loaded
         questSparkle = false,    -- always shows the client's loot-glow outline on quest items
         matchDamageMeterSize = true,   -- a new damage meter window matches the first one's size
