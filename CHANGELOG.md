@@ -2,6 +2,11 @@
 
 All notable changes to this addon are documented here.
 
+## 0.7.2 - 2026-11-12
+- Fixed the player and target frame's rage/energy/other power bar sometimes rendering in Mana's blue color instead of the correct color, when using the default bar texture.
+- Fixed sharing chat window layout between characters sometimes silently failing to apply on the receiving character.
+- Dark Mode now also covers the escape menu's red action buttons (Continue, Options, Logout, Exit Game, ...), which previously stayed bright and undarkened.
+
 ## 0.7.1 - 2026-11-11
 - Dark Mode now also covers windows that previously stayed in their default, undarkened look: the Legacy Tree, the Friends/Guild/Who window, NPC dialogue and quest windows, the combined bags window, the character sheet's equipment slots, and the party/raid control window.
 - Fixed the enemy nameplate cast bar resetting to its default height every time a new cast started, and enlarged its spell icon.
