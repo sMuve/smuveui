@@ -2,6 +2,13 @@
 
 All notable changes to this addon are documented here.
 
+## 0.8.0 - 2026-11-12
+- New: Auto-open clams. Opens any clam sitting in your bags on its own, the moment it shows up, without touching anything else in your bags. Off by default (Options -> QoL -> Loot & Vendors).
+- New: your debuffs bar can now be moved independently of your buffs bar, with its own "Reset position" button. Buffs and debuffs no longer have to stay anchored to each other.
+- New: the custom player buffs/debuffs display can be turned off entirely from Options -> Appearance -> Player, reverting to the default client display (needs a reload).
+- Fixed: a weapon imbue icon wasn't resizing with the "Buffs scale" slider, and could block dragging the buffs bar while repositioning it.
+- Weapon imbue borders are now color-coded: green for a Rogue's poison, purple for every other imbue.
+
 ## 0.7.2 - 2026-11-12
 - Fixed the player and target frame's rage/energy/other power bar sometimes rendering in Mana's blue color instead of the correct color, when using the default bar texture.
 - Fixed sharing chat window layout between characters sometimes silently failing to apply on the receiving character.
