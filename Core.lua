@@ -14,10 +14,11 @@ S.defaults = {
         classColorIntensity = 90, -- same, for Class color mode
         font = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf", -- "DEFAULT" keeps the client's fonts instead
         barTexture = "DEFAULT", -- health/resource bar texture on player/target/party/raid/nameplates; "DEFAULT" keeps the client's own
+        auraEnabled = true,     -- replaces Blizzard's BuffFrame/DebuffFrame with our own; off needs a /reload
         auraDurationSize = 12,
-        auraBuffsPos = nil,     -- { point, x, y }; nil keeps the built-in default position. Debuffs
-                                -- anchors to the buffs container instead of having its own position.
-        auraBarsUnlocked = false, -- always off after a reload; drag the buffs bar while it's on
+        auraBuffsPos = nil,     -- { point, x, y }; nil keeps the built-in default position
+        auraDebuffsPos = nil,   -- { point, x, y }; nil keeps the built-in default position
+        auraBarsUnlocked = false, -- always off after a reload; drag either bar while it's on
         auraBuffsScale = 1,
         auraDebuffsScale = 1,
         auraBuffsPerRow = 10,

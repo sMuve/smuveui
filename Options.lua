@@ -257,6 +257,17 @@ local function Button(layout, text, tooltip, onClick)
     return row, button
 end
 
+-- A second button in the right-hand column of an existing button row.
+local function ButtonRight(row, text, tooltip, onClick)
+    local button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    button:SetText(text)
+    button:SetSize(math.max(160, button:GetFontString():GetStringWidth() + 30), 24)
+    button:SetPoint("LEFT", SECOND_COLUMN, 0)
+    button:SetScript("OnClick", onClick)
+    AddTooltip(button, text, tooltip)
+    return button
+end
+
 -- A button that captures the next key or mouse button pressed and stores it as a WoW binding
 -- string (e.g. "F", "SHIFT-F", "BUTTON4"); right-click clears it. Left/right mouse clicks can't
 -- be captured (the first is how you start/stop listening; both are reserved game-wide anyway).
@@ -671,14 +682,20 @@ CATEGORIES[11] = { key = "player", title = "Player", indent = true, build = func
     if not S.modules.Auras:IsSupported() then
         Note(layout, "This client doesn't offer the aura containers these auras need, so they are inactive.")
     end
+    Checkbox(layout, "Enable", "Replaces your buffs and debuffs with these adjustable ones. Turning it off needs a /reload.",
+        Setting("appearance", "auraEnabled", "Auras"))
     Slider(layout, "Aura duration size", "Text size of the remaining time and the stack count (top right) on your buffs and debuffs.",
         6, 20, 1, Setting("appearance", "auraDurationSize", "Auras"))
-    Checkbox(layout, "Unlock buffs bar",
-        "Edit Mode doesn't offer this (it's drawn independently of the client's own BuffFrame/DebuffFrame), so it's moved by dragging it directly while this is checked. The debuffs bar always stays anchored below it. Always off after a reload.",
+    Checkbox(layout, "Unlock aura bars",
+        "Edit Mode doesn't offer this (both are drawn independently of the client's own BuffFrame/DebuffFrame), so each is moved by dragging it directly while this is checked. Always off after a reload.",
         Setting("appearance", "auraBarsUnlocked", "Auras"))
+    local resetRow = Button(layout, "Reset buffs position", "Moves the buffs bar back to its default position.",
+        function() S.modules.Auras:ResetPosition("buffs") end)
+    ButtonRight(resetRow, "Reset debuffs position", "Moves the debuffs bar back to its default position.",
+        function() S.modules.Auras:ResetPosition("debuffs") end)
     Slider(layout, "Buffs scale", "Size of your buff icons.", 0.5, 2, 0.05, Setting("appearance", "auraBuffsScale", "Auras"))
     Slider(layout, "Debuffs scale", "Size of your debuff icons.", 0.5, 2, 0.05, Setting("appearance", "auraDebuffsScale", "Auras"))
-    Slider(layout, "Buffs per row", "How many buff icons before a new row starts. The debuffs bar below always follows.", 1, 20, 1, Setting("appearance", "auraBuffsPerRow", "Auras"))
+    Slider(layout, "Buffs per row", "How many buff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraBuffsPerRow", "Auras"))
     Slider(layout, "Debuffs per row", "How many debuff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraDebuffsPerRow", "Auras"))
 end }
 

@@ -51,22 +51,29 @@ local IMBUE_INV_SLOT = ImbuesSupported and {
     [WeaponSlot.Ranged] = INVSLOT_RANGED or 18,
 } or {}
 
+-- The enchant data GetWeaponEnchantInfo returns never says WHICH imbue it is, only that it's one
+-- (enchantType == Imbue) - but only Rogues apply poisons and only Shamans apply the other kind of
+-- weapon imbue (Windfury/Flametongue/Frostbrand/Rockbiter), so the player's own class is a simple,
+-- reliable stand-in for "is this specifically a poison" without needing a spell/enchant ID list.
+local _, PLAYER_CLASS = UnitClass("player")
+
 local ICON_SIZE = 40
 local SPACING = 2
 local DEBUFF_GAP = 10 -- between the buffs area's bottom edge and the debuffs below it
 local MAX_BUFFS = BUFF_MAX_DISPLAY or 32
 local MAX_DEBUFFS = DEBUFF_MAX_DISPLAY or 16
--- Debuffs keeps at least this many empty buff rows' worth of distance from the buffs' top edge,
--- even with only one or two buffs up - so debuffs doesn't jump up right under them, and only
--- creeps back down (RepositionDebuffs, below) once buffs actually grows past this many rows.
+-- Only used below, for debuffs' default starting position: that many empty buff rows' worth of
+-- distance, so a fresh install's debuffs bar doesn't start awkwardly close to the buffs bar above
+-- it (a typical buffs bar is within this many rows most of the time).
 local MIN_BUFF_ROWS = 3
 
--- Only buffs gets a saved/draggable position; debuffs is anchored to its container below instead
--- (see CreateAuraContainer/RepositionDebuffs) so a bigger buffs scale, or buffs simply wrapping to
--- another row, carries debuffs down with it live rather than needing a second position to keep in
--- sync.
+-- Buffs and debuffs each get their own saved/draggable position (mirrors how
+-- Modules\UnitAuras.lua already treats the target/focus frames' buff and debuff rows as two
+-- independent blocks) - they no longer track each other live, so dragging either bar only ever
+-- moves that one; debuffs' default position just starts where it visually used to sit.
 local DEFAULT_POS = {
     buffs = { point = "TOPRIGHT", x = -275, y = -20 },
+    debuffs = { point = "TOPRIGHT", x = -275, y = -20 - (MIN_BUFF_ROWS * (ICON_SIZE + SPACING) + DEBUFF_GAP) },
 }
 
 local function DB()
@@ -78,9 +85,16 @@ local function Supported()
         and S.modules.Nameplates and S.modules.Nameplates.InitAuraButton ~= nil
 end
 
+local function Enabled()
+    return Supported() and DB().auraEnabled
+end
+
 local parents = {}    -- "buffs" | "debuffs" -> our own movable anchor frame
 local containers = {} -- "buffs" | "debuffs" -> aura container
 M.containers = containers -- read by /smuve dump
+local imbueCells = {} -- cell index -> { button, icon, cooldown, stack, timer, dur, binding } - declared
+                       -- up here (ApplyUnlocked, below, needs to reach it) rather than down with the
+                       -- rest of the imbue-cell code further down this file
 
 -- Hiding Blizzard's own BuffFrame/DebuffFrame -------------------------------------------------
 
@@ -143,6 +157,15 @@ local unlockBackdrops = {}
 
 function M:ApplyUnlocked()
     local unlocked = DB().auraBarsUnlocked
+    -- Weapon imbue cells sit directly on top of the buffs parent's own corner (same screen
+    -- position as the first one, leading the bar) and, being Buttons with their own mouse always
+    -- on for the tooltip, intercept the click before it ever reaches the parent's own drag
+    -- handling - confirmed live, the mover only worked with no imbue active. Turned off for the
+    -- same reason the backdrop/label only show while unlocked: nothing worth tooltipping while
+    -- actively dragging bars around anyway.
+    for _, cell in pairs(imbueCells) do
+        cell.button:EnableMouse(not unlocked)
+    end
     for key, parent in pairs(parents) do
         parent:SetMovable(true)
         parent:EnableMouse(unlocked)
@@ -159,7 +182,7 @@ function M:ApplyUnlocked()
                 label:SetFont(S:GetFont(), 12, "OUTLINE")
                 label:SetPoint("BOTTOM", parent, "TOP", 0, 4)
                 label:SetTextColor(1, 0.82, 0)
-                label:SetText("Buffs - drag to move")
+                label:SetText(key:sub(1, 1):upper() .. key:sub(2) .. " - drag to move")
                 unlockLabels[key] = label
             end
             if not backdrop then
@@ -182,6 +205,19 @@ function M:ApplyUnlocked()
     end
 end
 
+-- key: "buffs" or "debuffs". Clears the saved position regardless of whether the bar currently
+-- exists (so a later re-enable/reload starts from the default too), and repositions it live if it
+-- does.
+function M:ResetPosition(key)
+    DB()["aura" .. key .. "Pos"] = nil
+    local parent = parents[key]
+    local default = DEFAULT_POS[key]
+    if parent and default then
+        parent:ClearAllPoints()
+        parent:SetPoint(default.point, UIParent, default.point, default.x, default.y)
+    end
+end
+
 local function CreateParent(key)
     local parent = CreateFrame("Frame", nil, UIParent)
     -- A minimum clickable size, so the drag handle is grabbable even with nothing active on it.
@@ -197,8 +233,7 @@ end
 
 -- Containers ---------------------------------------------------------------------------------------
 
--- anchorTo: the buffs parent frame for buffs, the buffs container itself for debuffs (anchored to
--- its bottom edge instead of to a parent of its own - see the comment on DEFAULT_POS above).
+-- anchorTo: that aura's own parent frame (buffs or debuffs - see CreateParent/DEFAULT_POS above).
 local function CreateAuraContainer(anchorTo, isDebuff)
     local container = CreateFrame("AuraContainer", nil, UIParent, "CustomAuraContainerTemplate")
     container:SetUnit("player")
@@ -251,14 +286,7 @@ local function CreateAuraContainer(anchorTo, isDebuff)
     -- their own cells instead, leading the buffs container - see LayoutImbues, below Build().
     container:SetEnabled(true)
     container:ClearAllPoints()
-    if isDebuff then
-        -- Just a provisional anchor so the frame is never pointless between creation and the
-        -- RepositionDebuffs call Build() makes right after - that one (below) is what actually
-        -- keeps it in place, live, off the buffs area's real height with its minimum-rows floor.
-        container:SetPoint("TOPRIGHT", anchorTo, "BOTTOMRIGHT", 0, -DEBUFF_GAP)
-    else
-        container:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", 0, 0)
-    end
+    container:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", 0, 0)
     return container
 end
 
@@ -270,7 +298,6 @@ end
 
 local imbueTrack = {}  -- weapon slot -> { id, endTime, total }, to know when a swipe restarts
 local shownImbues = {} -- cell index -> { inv, icon, charges, endTime, total }
-local imbueCells = {}  -- cell index -> { button, icon, cooldown, stack, timer, dur, binding }
 
 -- Equipment data, read on the weapon events and at each layout only.
 local function ScanImbues()
@@ -361,7 +388,18 @@ local function CreateImbueCell(parent)
     local overlay = CreateFrame("Frame", nil, button)
     overlay:SetAllPoints(button)
     overlay:SetFrameLevel(cooldown:GetFrameLevel() + 1)
-    S.modules.Nameplates.AddBlackBorder(overlay, button, S.modules.Nameplates.BORDER_SIZE)
+    -- Purple, not the usual black border - tells an imbue cell apart from a regular buff at a
+    -- glance - green for a Rogue's poison (same green Nameplates.lua's own TYPE_COLORS.Poison
+    -- uses), purple for every other kind (same purple as its own TYPE_COLORS.Curse). Both reused
+    -- directly rather than sharing a constant (duplicated per module, as usual).
+    local edges = S.modules.Nameplates.AddBlackBorder(overlay, button, S.modules.Nameplates.BORDER_SIZE)
+    local r, g, b = 0.60, 0.00, 1.00
+    if PLAYER_CLASS == "ROGUE" then
+        r, g, b = 0.00, 0.60, 0.00
+    end
+    for _, edge in ipairs(edges) do
+        edge:SetVertexColor(r, g, b)
+    end
 
     local stack = overlay:CreateFontString(nil, "OVERLAY")
     stack:SetFont(S:GetFont(), DB().auraDurationSize, "OUTLINE")
@@ -385,7 +423,9 @@ local function CreateImbueCell(parent)
         end
     end
 
-    button:EnableMouse(true)
+    -- Matches ApplyUnlocked's own EnableMouse toggle for every existing cell - a cell created
+    -- later (a weapon swap) while already unlocked must start the same way, not default to on.
+    button:EnableMouse(not DB().auraBarsUnlocked)
     button:SetScript("OnEnter", ImbueCellOnEnter)
     button:SetScript("OnLeave", ImbueCellOnLeave)
 
@@ -412,31 +452,6 @@ local function HideImbueCellsFrom(first)
     end
 end
 
--- Debuffs' Y follows the buffs PARENT (the fixed drag anchor), not the buffs container itself,
--- with its own live height floored at MIN_BUFF_ROWS rows - so a handful of buffs don't pull
--- debuffs up right underneath them, while a buffs area that actually grows past that floor still
--- pushes debuffs down further rather than overlapping it. Debuffs' X instead follows the buffs
--- CONTAINER's own right edge directly (a second, independent SetPoint call) rather than
--- replicating LayoutImbues' imbue-cell x-shift by hand - that duplicated math previously left
--- debuffs' right edge a step or so off from buffs' whenever the two disagreed, where anchoring to
--- the real edge can't drift. Called after every LayoutImbues pass, and off a low-frequency ticker
--- (StartDebuffsTicker, below) to also catch a plain buff count/row change with no weapon event
--- behind it.
-local function RepositionDebuffs()
-    if not (containers.buffs and containers.debuffs and parents.buffs) then
-        return
-    end
-    local actual = containers.buffs:GetHeight()
-    if not (actual and not S.IsSecret(actual)) then
-        actual = 0
-    end
-    local minHeight = MIN_BUFF_ROWS * (ICON_SIZE + SPACING) * (DB().auraBuffsScale or 1)
-    local height = math.max(actual, minHeight)
-    containers.debuffs:ClearAllPoints()
-    containers.debuffs:SetPoint("TOP", parents.buffs, "TOP", 0, -(height + DEBUFF_GAP))
-    containers.debuffs:SetPoint("RIGHT", containers.buffs, "RIGHT")
-end
-
 -- Lays out active imbues leading the buffs container (same side the client's own weapon-enchant
 -- cells lead BuffFrame from), then shifts the container's own anchor out of the way by as many
 -- steps - its line width is shortened to match, same as everything else anchored off it.
@@ -447,6 +462,11 @@ local function LayoutImbues()
     local anchor = parents.buffs
     local n = math.min(ScanImbues(), #IMBUE_SLOTS)
     local step = ICON_SIZE + SPACING
+    -- Same scale as the buffs container itself (containers.buffs:SetScale, in CreateAuraContainer)
+    -- - SetPoint's own offset is already auto-scaled by the calling frame's effective scale, the
+    -- same reason containers.buffs' own anchor shift below never needed to account for scale by
+    -- hand either, so step itself stays unscaled.
+    local scale = DB().auraBuffsScale or 1
     for i = 1, n do
         local cell = imbueCells[i]
         if not cell then
@@ -456,6 +476,7 @@ local function LayoutImbues()
         if cell.button:GetParent() ~= anchor then
             cell.button:SetParent(anchor)
         end
+        cell.button:SetScale(scale)
         cell.button:ClearAllPoints()
         cell.button:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -(i - 1) * step, 0)
         PaintImbueCell(cell, shownImbues[i])
@@ -466,7 +487,6 @@ local function LayoutImbues()
     containers.buffs:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -n * step, 0)
     local perRow = DB().auraBuffsPerRow or 10
     containers.buffs:SetFlowLayoutMaximumLineSize(math.max(step, perRow * step - n * step))
-    RepositionDebuffs()
     return n
 end
 
@@ -489,46 +509,31 @@ function M:RefreshImbues()
     LayoutImbues()
 end
 
-local debuffsTicker
-
--- RepositionDebuffs needs to track the buffs area's live height regardless of weapon imbues (it's
--- not an imbue feature), so this runs it on its own low-frequency ticker rather than only
--- piggybacking on LayoutImbues/the weapon events above - ImbuesSupported clients still get it hit
--- twice (LayoutImbues calls it too) which is harmless, unsupported clients still get it at all.
-local function StartDebuffsTicker()
-    if debuffsTicker then
-        return
-    end
-    debuffsTicker = C_Timer.NewTicker(0.3, RepositionDebuffs)
-end
-
 local generation = 0
 
 local function Build()
-    if not parents.buffs then
-        CreateParent("buffs")
-    end
-    -- Buffs first: debuffs anchors to its container below, so it must already exist.
     for _, key in ipairs({ "buffs", "debuffs" }) do
-        local anchorTo = key == "debuffs" and containers.buffs or parents.buffs
-        if containers[key] and (containers[key].generation ~= generation or not anchorTo) then
+        if not parents[key] then
+            CreateParent(key)
+        end
+        local anchorTo = parents[key]
+        if containers[key] and containers[key].generation ~= generation then
             containers[key]:SetEnabled(false)
             containers[key]:Hide()
             containers[key] = nil
         end
-        if not containers[key] and anchorTo then
+        if not containers[key] then
             local container = CreateAuraContainer(anchorTo, key == "debuffs")
             container.generation = generation
             containers[key] = container
         end
     end
     LayoutImbues()
-    RepositionDebuffs()
     M:ApplyUnlocked()
 end
 
 function M:Init()
-    if not Supported() then
+    if not Enabled() then
         return
     end
     DB().auraBarsUnlocked = false -- always off after a reload
@@ -542,13 +547,12 @@ function M:Init()
     end
     StartHideTicker()
     StartImbueEvents()
-    StartDebuffsTicker()
     Build()
 end
 
 -- Settings changed: a new container (slider drags settle first).
 function M:Refresh()
-    if not Supported() then
+    if not Enabled() then
         return
     end
     S.SafeCall(self.ApplyUnlocked, self)
