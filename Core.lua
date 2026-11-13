@@ -160,6 +160,13 @@ S.defaults = {
         alwaysShown = {},       -- button name -> true: never hidden
     },
     chatLayout = nil,           -- account-wide chat windows, written by Modules\Chat.lua
+    releaseNotes = {
+        enabled = true,         -- shows the "what's new" popup once after an update; the popup's
+                                 -- own "never show again" checkbox and the Options footer control
+                                 -- both read/write this same value (Modules\ReleaseNotes.lua)
+        -- lastSeenVersion intentionally left out: a missing key means "fresh install, nothing
+        -- seen yet" - same as explicitly nil, since Lua can't store nil as a real table value.
+    },
 }
 
 -- Settings earlier versions stored that nothing reads any more; removed from the saved variables.

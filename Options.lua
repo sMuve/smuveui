@@ -1042,10 +1042,12 @@ local function CreateOptionsFrame()
     frame:Hide()
     table.insert(UISpecialFrames, frame:GetName())
 
+    local getMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local titleText = "SmuveUI |cffa0a0a0(" .. (getMetadata(addonName, "Version") or "?") .. ")|r"
     if frame.SetTitle then
-        frame:SetTitle("SmuveUI")
+        frame:SetTitle(titleText)
     elseif frame.TitleText then
-        frame.TitleText:SetText("SmuveUI")
+        frame.TitleText:SetText(titleText)
     end
     if frame.SetPortraitToAsset then
         frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Gear_01")
@@ -1055,17 +1057,22 @@ local function CreateOptionsFrame()
 
     local list = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
     list:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -64)
-    list:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 10)
+    list:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 40)
     list:SetWidth(LIST_WIDTH)
 
     local content = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
     content:SetPoint("TOPLEFT", list, "TOPRIGHT", 6, 0)
-    content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
+    content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
 
-    local version = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    version:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -38)
-    local getMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-    version:SetText("v" .. (getMetadata(addonName, "Version") or "?"))
+    -- Persistent footer, below both list and content - visible no matter which category is
+    -- selected, since it's a separate frame from either (spec 012's own "not under any category").
+    local footer = CreateFrame("Frame", nil, frame)
+    footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, 12)
+    footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 12)
+    footer:SetHeight(24)
+    AddCheckbox(footer, 0, "Show release notes after an update",
+        "Pops up a window with what's new, the first time you log in after SmuveUI updates.",
+        S.modules.ReleaseNotes.IsEnabled, S.modules.ReleaseNotes.SetEnabled)
 
     for index, category in ipairs(CATEGORIES) do
         categoryButtons[category.key] = CreateCategoryButton(list, category, index)

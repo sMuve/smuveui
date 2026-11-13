@@ -472,7 +472,7 @@ local PANELS = {
     "EncounterJournal", "CollectionsJournal", "AchievementFrame", "CalendarFrame", "TimeManagerFrame",
     "GuildBankFrame", "ItemSocketingFrame", "PetStableFrame", "StableFrame",
     "ProfessionsFrame", "WhoFrame", "RaidParentFrame", "GuildFrame", "LFGParentFrame", "BattlefieldFrame",
-    "PVPFrame", "HonorFrame", "SmuveUIOptionsFrame", "ColorPickerFrame", "StaticPopup1", "StaticPopup2",
+    "PVPFrame", "HonorFrame", "SmuveUIOptionsFrame", "SmuveUIReleaseNotesFrame", "ColorPickerFrame", "StaticPopup1", "StaticPopup2",
     "StaticPopup3", "StaticPopup4", "CinematicFrameCloseDialog",
     "BarberShopFrame", "GroupLootHistoryFrame", "LootHistoryFrame", "ArenaFrame", "ProfessionsCustomerOrdersFrame",
     -- LegacySystemFrame (the "Legacy Tree" talent-style window) and SocialUIFrame (the unified
