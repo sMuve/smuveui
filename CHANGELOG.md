@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.9.0 - 2026-11-13
+- New: a "what's new" popup shows once after SmuveUI updates, listing what changed since you last saw it. Can be turned off from its own checkbox, or from a new control at the bottom of the Options window (not tucked under any category).
+- The Options window's title now shows the installed version number next to "SmuveUI".
+
 ## 0.8.0 - 2026-11-12
 - New: Auto-open clams. Opens any clam sitting in your bags on its own, the moment it shows up, without touching anything else in your bags. Off by default (Options -> QoL -> Loot & Vendors).
 - New: your debuffs bar can now be moved independently of your buffs bar, with its own "Reset position" button. Buffs and debuffs no longer have to stay anchored to each other.
