@@ -177,6 +177,47 @@ local function ApplyTexture(bar)
     end
 end
 
+-- Resource/power bars specifically (never health): confirmed live via /smuve dump, and via
+-- BetterBlizzFrames' own source (which always swaps in its own plain bundled file here regardless
+-- of Default/custom settings, never the native atlas), that restoring the Default atlas and
+-- desaturating it before tinting (ApplyResourceColor below) still looked far too dark. The native
+-- atlas isn't just colored, it's also fairly dim, so a desaturated copy of it is a dim grey, and
+-- dim grey times a bright power color is still dim - tinting only ever looks right on a bright,
+-- neutral base, which a bundled texture is and the native atlas isn't (the same reason a custom
+-- texture never had this problem at all). So the fill always uses a bundled plain texture for
+-- tinting - Default included, never the native atlas; Default just falls back to one specific
+-- bundled texture instead of the user's chosen one.
+local RESOURCE_BAR_FALLBACK = BUILTIN_TEXTURES[1].path
+
+-- bar -> the path ApplyResourceBarTexture last actually set on it, so a repeat call with nothing
+-- to do can tell "already correct" apart from "user changed the texture setting" below.
+local appliedResourcePath = setmetatable({}, { __mode = "k" })
+
+local function ApplyResourceBarTexture(bar)
+    if not bar or not bar.SetStatusBarTexture or not Accessible(bar) then
+        return
+    end
+    local path = ResolveTexture(S.db.appearance.barTexture) or RESOURCE_BAR_FALLBACK
+    -- Only actually call SetStatusBarTexture when something needs fixing - either the desired
+    -- path changed (the user picked a different one in Options), or the bar's been reverted to an
+    -- atlas since we last touched it (an atlas being present at all means Blizzard put it there -
+    -- our own plain file never has one). Confirmed live: calling this unconditionally on every
+    -- single UnitFrameManaBar_UpdateType firing (needed for the flicker fix below) was itself the
+    -- cause of a ~3px text-position drift specific to the player frame, which gets that native
+    -- call far more often than target does (its FullPowerFrame "resource full" pulse animation
+    -- triggers it repeatedly, something target's bar has no equivalent of) - cutting the redundant
+    -- churn here without weakening the actual fix or breaking a later texture-setting change.
+    if appliedResourcePath[bar] == path then
+        local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+        local atlas = tex and tex.GetAtlas and tex:GetAtlas()
+        if not atlas or atlas == "" then
+            return
+        end
+    end
+    bar:SetStatusBarTexture(path)
+    appliedResourcePath[bar] = path
+end
+
 -- User Story 1: player and target frames -----------------------------------------------------------
 -- Both follow the same "<Name>Content.<Name>ContentMain" nesting for the health bar (confirmed via
 -- Modules\UnitFrames.lua's FindBar and AlignManaText, which already resolve this same path). The
@@ -215,9 +256,40 @@ local function ApplyResourceColor(bar, unit)
     if type(unit) ~= "string" then
         return
     end
-    local _, token = UnitPowerType(unit)
-    local color = token and PowerBarColor and PowerBarColor[token]
+    -- UnitPowerType(unit) can come back secret/protected regardless of which unit it's about -
+    -- confirmed live on both target (combat) and, per a user report, player too; secrecy here
+    -- tracks the execution context a value was read in (e.g. inside Blizzard's own secure call
+    -- stack), not whose data it is. Indexing a table with a secret value throws outright on this
+    -- client (same class of issue as BigDebuffs.lua's FindCuratedDebuff). Confirmed live: a
+    -- resource bar got stuck showing the raw, untinted Mana-bar atlas (a greenish-teal) whenever
+    -- that happened, since the throw landed after ApplyTexture() had already reset the bar's
+    -- vertex color to white via SetAtlas, aborting before SetStatusBarColor ever re-tinted it.
+    local ok, _, token = pcall(UnitPowerType, unit)
+    local color = ok and token and not S.IsSecret(token) and PowerBarColor and PowerBarColor[token]
     if color then
+        -- The REAL root cause of "green instead of yellow/red" (confirmed live via /smuve dump,
+        -- and via BetterBlizzFrames' own BBF.ShowHealthColor, which does exactly this before every
+        -- SetStatusBarColor call): Default's atlas art isn't a neutral white/grey base the way a
+        -- custom texture is - it's already colored (a blue/cyan "Mana" look, confirmed unchanged
+        -- in the dump regardless of power type), so tinting it directly multiplies our color onto
+        -- an already-colored image instead of a neutral one - blue atlas * yellow tint ≈ muddy
+        -- green, blue atlas * red tint ≈ near-black. SetStatusBarDesaturated(true) strips the
+        -- atlas to greyscale first so the tint lands as the clean, correct color. Harmless on a
+        -- custom (already-neutral) texture too.
+        --
+        -- Only actually call SetStatusBarDesaturated when it isn't already desaturated - same
+        -- reasoning as ApplyResourceBarTexture's own gating: this ran completely unconditionally
+        -- before, on every single call, and was the one other new (this session) per-call side
+        -- effect still happening at player's higher native-repaint frequency after that gating
+        -- was added - worth isolating now that cutting the texture churn alone didn't fix the
+        -- ~3px player-frame text drift.
+        if bar.SetStatusBarDesaturated then
+            local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+            local alreadyDesaturated = tex and tex.IsDesaturated and tex:IsDesaturated()
+            if not alreadyDesaturated then
+                bar:SetStatusBarDesaturated(true)
+            end
+        end
         bar:SetStatusBarColor(color.r, color.g, color.b)
     end
 end
@@ -231,7 +303,7 @@ local function ApplyUnitFrame(frameName, unit)
     ApplyTexture(healthContainer and healthContainer.HealthBar)
     local manaArea = main.ManaBarArea
     local manaBar = (manaArea and manaArea.ManaBar) or main.ManaBar
-    ApplyTexture(manaBar)
+    ApplyResourceBarTexture(manaBar)
     if manaBar then
         manaBarUnit[manaBar] = unit
     end
@@ -256,7 +328,7 @@ local function ApplyCompactFrame(frame)
     end
     trackedCompactFrames[frame] = true
     ApplyTexture(frame.healthBar)
-    ApplyTexture(frame.powerBar)
+    ApplyResourceBarTexture(frame.powerBar)
     ApplyResourceColor(frame.powerBar, frame.displayedUnit or frame.unit)
 end
 
@@ -295,7 +367,7 @@ local function ApplyToPersonalResourceDisplay()
     end
     local container = frame.HealthBarsContainer
     ApplyTexture(container and container.healthBar)
-    ApplyTexture(frame.PowerBar)
+    ApplyResourceBarTexture(frame.PowerBar)
     ApplyResourceColor(frame.PowerBar, "player")
 end
 
@@ -347,9 +419,17 @@ function M:Init()
     -- own UnitFrameManaBar_UpdateType, not only in response to events we can enumerate ourselves -
     -- hooksecurefunc fires synchronously right after it, closing that window every single time it
     -- runs, for any reason, rather than only at the specific moments this module already hooks.
+    -- Re-swaps the texture here too (not just color) - confirmed live via /smuve dump: the player
+    -- frame's own "resource is full" pulse animation (FullPowerFrame/PulseFrame, a child that only
+    -- exists on PlayerFrame's ManaBar, never TargetFrame's) calls this native function far more
+    -- often than our periodic ticker runs, each time reverting the bar's fill back to the native
+    -- (dim) atlas - recoloring alone just redesaturated+tinted that same dim atlas every time,
+    -- producing a dark result that then flashed bright again whenever the ticker next caught up,
+    -- i.e. a continuous flicker specific to the player frame.
     hooksecurefunc("UnitFrameManaBar_UpdateType", function(bar)
         local unit = manaBarUnit[bar]
         if unit then
+            ApplyResourceBarTexture(bar)
             ApplyResourceColor(bar, unit)
         end
     end)
@@ -359,6 +439,17 @@ function M:Init()
     -- PLAYER_ENTERING_WORLD (no target yet, or the client's own default) instead of the selected
     -- texture, confirmed live: only the target frame drifted out of sync after a /reload.
     S:On("PLAYER_TARGET_CHANGED", function() ApplyToUnitFrames() end)
+    -- Safety net: confirmed live via /smuve dump that the UnitFrameManaBar_UpdateType hook above
+    -- isn't actually sufficient on its own - PlayerFrame's ManaBar was found back on its native
+    -- atlas (not our custom texture) AND untinted white (not the class/power color), despite both
+    -- the proactive ApplyToUnitFrames() path and that reactive hook already being in place. So
+    -- something else on this client re-applies the native bar art/color without going through
+    -- UnitFrameManaBar_UpdateType at all - a second native call we haven't identified, or a native
+    -- OnUpdate-driven repaint. Rather than chase another specific hook point that might also turn
+    -- out incomplete, periodically reassert both texture and color on player/target directly
+    -- (same pattern as RaidFrames.lua's refreshTicker / UnitFrames.lua's REFRESH_INTERVAL ticker) -
+    -- cheap (two bars, no table scans) and idempotent, so it closes the gap regardless of cause.
+    C_Timer.NewTicker(1, function() ApplyToUnitFrames() end)
 end
 
 -- Debug (/smuve dump) -------------------------------------------------------------------------------

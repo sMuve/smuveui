@@ -510,6 +510,29 @@ local function ApplyOutlineAll()
     end
 end
 
+-- Arrow keys ----------------------------------------------------------------------------------------
+-- Confirmed live (user report): plain arrow keys did nothing in the chat edit box - no cursor
+-- movement, no cycling through previously sent lines - until Alt was held. That's WoW's own
+-- EditBox:SetAltArrowKeyMode(true): while enabled, plain arrow keys pass straight through to
+-- character movement/the camera instead, and Alt is required to get the usual text-editing
+-- behavior back. Not something this addon ever set - true here by default on this client/account
+-- for whatever reason. Explicitly toggled both ways (not just applied when on) so the option stays
+-- reversible for anyone who actually wants arrow-key movement to keep working while chatting.
+local function ApplyArrowKeyMode(editBox)
+    if not editBox or not editBox.SetAltArrowKeyMode then
+        return
+    end
+    editBox:SetAltArrowKeyMode(not S.db.qol.chatArrowKeys)
+end
+
+local function ApplyArrowKeyModeAll()
+    for id = 1, MaxWindows() do
+        local chatFrame = _G["ChatFrame" .. id]
+        local editBox = chatFrame and (chatFrame.editBox or _G["ChatFrame" .. id .. "EditBox"])
+        ApplyArrowKeyMode(editBox)
+    end
+end
+
 -- Module ------------------------------------------------------------------------------------------
 
 function M:Init()
@@ -526,6 +549,7 @@ function M:Init()
     end
 
     S.SafeCall(ApplyOutlineAll)
+    S.SafeCall(ApplyArrowKeyModeAll)
 
     -- Bring this character's chat settings in line with the shared layout, once per session.
     S:On("PLAYER_ENTERING_WORLD", function()
@@ -614,6 +638,7 @@ function M:Refresh()
         return
     end
     S.SafeCall(ApplyOutlineAll)
+    S.SafeCall(ApplyArrowKeyModeAll)
     if self.ready then
         S.SafeCall(SetUpHistory)
     end

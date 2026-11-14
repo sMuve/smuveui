@@ -545,6 +545,9 @@ CATEGORIES[8] = { key = "qol_chat_social", title = "Chat & Social", indent = tru
     local outlineRow = Checkbox(left, "Outline",
         "Outlines the text in every chat window.",
         Setting("qol", "chatOutline", "Chat"))
+    Checkbox(left, "Arrow keys in chat",
+        "Lets the arrow keys move the text cursor and cycle through previously sent lines while typing in chat, without needing to hold Alt.",
+        Setting("qol", "chatArrowKeys", "Chat"))
     Checkbox(left, "Sound on whisper",
         "Plays a sound whenever you receive a whisper.",
         Setting("qol", "whisperSound", "WhisperSound"))
@@ -756,7 +759,7 @@ CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(la
         end)
 
     Header(layout, "Cast Bar (enemy nameplates)")
-    Slider(layout, "Height increase", "Grows the cast bar beyond its normal height.", 0, 20, 1,
+    Slider(layout, "Height increase", "Makes the cast bar's moving highlight (Spark) taller, so the bar reads as bigger without resizing the bar itself.", 0, 20, 1,
         function() return S.modules.Nameplates:GetCastBarHeightIncrease() end,
         function(value)
             S.db.nameplates.castBarHeightIncrease = value

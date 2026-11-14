@@ -350,6 +350,38 @@ function M:AlignManaTexts()
     end
 end
 
+-- PlayerFrame's own mana-bar text sits a few px too high - unlike Target/Focus above, this isn't
+-- a box/mask mismatch (confirmed live: reusing AlignManaText's own calculation for PlayerFrame
+-- computed essentially no correction, and the drift persisted regardless). The actual anchor data
+-- involved (GetPoint() on these FontStrings) is secret/combat-protected and unreadable on this
+-- client, so the real mechanism was never pinned down - confirmed via BetterBlizzFrames' own
+-- source, which hand-repositions this exact text with a manually-tuned pixel offset rather than a
+-- computed one, same as here. AdjustPointsOffset (not ClearAllPoints+SetPoint) shifts whatever
+-- Blizzard's own anchor already is by this relative amount, leaving the horizontal position -
+-- never reported as wrong - untouched, and sidesteps needing to read the secret anchor at all.
+-- Guarded to run once per login/reload only: calling it again would compound the offset further.
+local PLAYER_MANA_TEXT_NUDGE_Y = 3 -- a few px down; confirmed live as the right direction/amount
+local playerManaTextNudged = false
+
+local function NudgePlayerManaText()
+    if playerManaTextNudged then
+        return
+    end
+    local playerMain = S.Resolve("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain")
+    local manaArea = playerMain and playerMain.ManaBarArea
+    local mana = (manaArea and manaArea.ManaBar) or (playerMain and playerMain.ManaBar)
+    if not mana or not mana.LeftText or not mana.RightText then
+        return
+    end
+    if mana.LeftText.AdjustPointsOffset then
+        mana.LeftText:AdjustPointsOffset(0, -PLAYER_MANA_TEXT_NUDGE_Y)
+    end
+    if mana.RightText.AdjustPointsOffset then
+        mana.RightText:AdjustPointsOffset(0, -PLAYER_MANA_TEXT_NUDGE_Y)
+    end
+    playerManaTextNudged = true
+end
+
 -- Name glow -----------------------------------------------------------------------------------------
 -- The reaction colored band behind the name on the target and focus frames (ReputationColor):
 -- optionally hidden, kept off by re-hiding it whenever the client shows it again.
@@ -463,6 +495,7 @@ local function UpdateSoon()
     C_Timer.After(0, function()
         M:UpdateAll()
         M:AlignManaTexts()
+        NudgePlayerManaText()
         M:ApplyNameGlow()
         M:ApplyTotPosition()
     end)

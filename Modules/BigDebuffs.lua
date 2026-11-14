@@ -57,6 +57,8 @@ local EXTRA_IMPORTANT_SPELLS = {
     [1277462] = true, -- Contingency Plan
     [14751] = true, -- Inner Focus
     [6346] = true, -- Fear Ward
+    [543] = true, -- Fire Ward
+    [6143] = true, -- Frost Ward
 }
 
 -- Same idea as EXTRA_IMPORTANT_SPELLS, but for harmful debuffs worth flagging that aren't crowd
@@ -244,18 +246,30 @@ local function CreateManualIcon(frame, size, existingMask, maskAtlas, showDurati
 end
 
 -- Finds the first active debuff (if any) whose spellId is in the given curated set.
+--
+-- BUG FIXED (reported live: Weakened Soul's icon disappearing the moment combat starts): a slot
+-- erroring out (ok == false) was treated identically to "reached the end of the list" and aborted
+-- the whole scan immediately. In combat, some of the player's own harmful auras can become
+-- secret/unreadable (the same client behavior Debug.lua's secretId counter already tracks for the
+-- AddAuraGroup-based tiers) - if one of THOSE sits earlier in the index order than the curated
+-- debuff actually being searched for, the old code gave up before ever reaching it, hiding the
+-- icon even though the real aura was still active. A slot that errors is now skipped instead of
+-- treated as the end of the list; only a clean "no more auras" (ok == true, auraData == nil)
+-- actually ends the scan. A secret spellId is likewise skipped rather than used as a table key
+-- (indexing a table with a secret value throws outright on this client).
+local MAX_AURA_INDEX = 60 -- generous cap so a run of error/secret slots can never loop forever
 local function FindCuratedDebuff(unit, spellSet)
-    local index = 1
-    while true do
+    for index = 1, MAX_AURA_INDEX do
         local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, "HARMFUL")
-        if not ok or not auraData then
-            return nil
+        if ok and not auraData then
+            return nil -- genuinely reached the end of the list
         end
-        if spellSet[auraData.spellId] then
+        if ok and auraData and not S.IsSecret(auraData.spellId) and spellSet[auraData.spellId] then
             return auraData
         end
-        index = index + 1
+        -- else: this slot errored, or was secret, or just didn't match - keep scanning
     end
+    return nil
 end
 
 local function UpdateManualIcon(unit, icon)
@@ -269,12 +283,15 @@ local function UpdateManualIcon(unit, icon)
         return
     end
     icon.art:SetTexture(auraData.icon)
-    local hasTime = auraData.duration and auraData.duration > 0 and auraData.expirationTime
+    -- Same secret-value caution as the spellId lookup above: duration/expirationTime read fine
+    -- outside combat, but are exactly the kind of field this client can make secret mid-combat.
+    local hasTime = not S.IsSecret(auraData.duration) and auraData.duration and auraData.duration > 0
+        and not S.IsSecret(auraData.expirationTime) and auraData.expirationTime
     if icon.timer then
         if hasTime then
             local function Refresh()
-                local remaining = auraData.expirationTime - GetTime()
-                icon.timer:SetText(remaining > 0 and FormatRemaining(remaining) or "")
+                local ok, remaining = pcall(function() return auraData.expirationTime - GetTime() end)
+                icon.timer:SetText((ok and remaining and remaining > 0) and FormatRemaining(remaining) or "")
             end
             Refresh()
             if icon.ticker then
@@ -572,9 +589,12 @@ function M:Init()
     -- doesn't fire UNIT_AURA the way expected (e.g. a duration tick without a stack/application
     -- change).
     C_Timer.NewTicker(2, function()
+        -- Not routed through S:On, so (unlike every other handler in this file) it isn't
+        -- automatically pcall-wrapped by Core.lua's own event dispatch - wrapped by hand here so
+        -- one bad tick can never silently stop every future one.
         for unit, host in pairs(hosts) do
             if host.importantDebuff then
-                UpdateManualIcon(unit, host.importantDebuff)
+                S.SafeCall(UpdateManualIcon, unit, host.importantDebuff)
             end
         end
     end)

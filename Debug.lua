@@ -1,7 +1,8 @@
 local _, S = ...
 
 -- /smuve dump: writes what the client actually has (frame structure, texts, chat settings) into
--- SmuveUIDB.debug, so it can be read from the saved variables file after a /reload.
+-- its own SmuveUIDebugDB SavedVariables global, so it can be read from disk after a /reload
+-- without it being mixed into (or bloating) S.db/SmuveUIDB's real settings and chat history.
 
 local function Safe(value)
     if S.IsSecret(value) then
@@ -1061,7 +1062,8 @@ function S:Dump()
                 local _, _, _, _, _, _, containerLink, _, _, containerItemID = GetContainerItemInfo(bagID, slotID)
                 link, itemID = containerLink, containerItemID
             end
-            local name = link and GetItemInfo(link)
+            local getItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+            local name = link and getItemInfo and getItemInfo(link)
             if type(name) == "string" and name:lower():find("clam") then
                 table.insert(debug.bagClamCandidates, string.format("bag=%d slot=%d name=%s itemID=%s",
                     bagID, slotID, name, tostring(itemID)))
@@ -1072,6 +1074,6 @@ function S:Dump()
     -- Modules that are switched off.
     debug.disabledModules = S.db.disabledModules
 
-    S.db.debug = debug
+    SmuveUIDebugDB = debug
     S.Print("Diagnostics saved. Type /rl so they are written to disk.")
 end

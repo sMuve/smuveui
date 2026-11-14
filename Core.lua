@@ -34,6 +34,7 @@ S.defaults = {
         chatUrls = true,
         chatHistory = true,
         chatOutline = false,
+        chatArrowKeys = true,  -- arrow keys move the text cursor / cycle sent history without holding Alt
         whisperSound = false,             -- plays a sound on an incoming whisper
         whisperSoundKit = "TELL_MESSAGE", -- which one (Modules\WhisperSound.lua's SOUNDS list)
         easyFishing = false,    -- one key casts/reels, and the bite cue plays louder, with a fishing rod in hand
@@ -583,6 +584,13 @@ S:On("ADDON_LOADED", function(_, loaded)
     end
     MergeDefaults(SmuveUIDB, S.defaults)
     S.db = SmuveUIDB
+    -- Diagnostics (/smuve dump) get their own SavedVariables global rather than living in
+    -- S.db/SmuveUIDB - that file holds real user settings and chat history (multiple MB on its
+    -- own) and a throwaway diagnostic snapshot has no business bloating or risking it. Separate
+    -- file also means it's small enough to read whole after a /reload, instead of needing
+    -- offset/grep against a multi-MB file. Debug.lua writes SmuveUIDebugDB directly (no S.db-style
+    -- alias - nothing else reads this global).
+    SmuveUIDebugDB = SmuveUIDebugDB or {}
 end)
 
 -- Modules switched off with "/smuve disable <Module>" (for tracking down problems) are not started.
@@ -623,7 +631,7 @@ SlashCmdList.SMUVEUI = function(input)
     if command == "dump" then
         S:Dump()
     elseif command == "cleardump" then
-        S.db.debug = nil
+        SmuveUIDebugDB = {}
         S.Print("Diagnostics removed.")
     elseif command == "chatresync" then
         if S.modules.Chat and S.modules.Chat.ResetReceived then

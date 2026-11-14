@@ -946,28 +946,26 @@ end
 -- - plain Blizzard nameplate cast bars have no such text. Scoped to enemies; friendly plates are
 -- left exactly as the client draws them.
 --
--- Growing castBar/CastBarsContainer's height directly (hooking their SetHeight/SetSize) never
--- stuck - confirmed live, it stayed the client's original height no matter what. Reference addon
--- muleyoUI's own Forever nameplate code (Modules/Forever/Nameplates/Health.lua) shows why: the
--- client re-anchors castBar every layout pass with opposing-corner points (effectively a
--- TOPLEFT+BOTTOMRIGHT pair), and two opposing corners silently redefine a frame's height from
--- their own geometry - any SetHeight we apply in between gets thrown away by the next anchor
--- pass without ever calling SetHeight/SetSize again, so hooking those methods has nothing to
--- catch. muleyoUI's fix is to re-anchor castBar itself with same-edge points (BOTTOMLEFT +
--- BOTTOMRIGHT, both on the bottom edge) instead, which don't constrain height at all, leaving
--- SetHeight the only thing deciding it - done here too, every NamePlateUnitFrameMixin:UpdateAnchors
--- call (the same hook point muleyoUI uses), since the client can re-clear our points at any time.
--- Both read live from DB() (Options: Nameplates > Cast Bar) rather than being fixed, so the player
--- can grow the cast bar and its text further than this default amount.
+-- Growing castBar/CastBarsContainer's real height directly via plain SetHeight (no re-anchoring
+-- needed first - confirmed via reference addon BetterBlizzPlates' own source, forever/modules/
+-- castbar.lua, which does exactly this in production: castBar:SetHeight(...) and
+-- frame.CastBarsContainer:SetHeight(...), nothing more). A /smuve dump taken while this ran
+-- previously (with an extra same-edge re-anchor step that's no longer here) showed "Lua Taint:
+-- SmuveUI" on later GetPoint reads of castBar - but per BetterBlizzPlates doing the identical
+-- write with no apparent issue of their own, that's an expected, harmless side effect of any
+-- addon touching this protected widget (it only blocks later *measurement* reads, like our own
+-- debug dump's GetPoint calls - not rendering), not a sign the write itself is unsafe. Reapplied
+-- from both the anchor hook below and the cast bar's own OnEvent hook (HookCastBarIconEvents),
+-- since the client can reset it from either path.
 local castBarWidgetEnemy = setmetatable({}, { __mode = "k" }) -- fontstring -> true while its plate is an enemy's
 local castBarEnemyFrame = setmetatable({}, { __mode = "k" })  -- NamePlateUnitFrame -> true while it's an enemy's
 local castBarNativeHeight = setmetatable({}, { __mode = "k" })          -- castBar -> height before we touched it
 local castBarContainerNativeHeight = setmetatable({}, { __mode = "k" }) -- CastBarsContainer -> height before we touched it
+local castBarSparkNative = setmetatable({}, { __mode = "k" }) -- castBar -> { w, h } of its Spark's native size
 local castBarFontHooked = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> true
 local castBarFontNative = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> its native (unscaled) size
 local castBarFontApplied = setmetatable({}, { __mode = "k" }) -- cast bar fontstring -> size we last set
 local castBarAnchorsHooked = false
-local growingCastBarHeight = false
 local scalingCastBarFont = false
 
 function M:GetCastBarHeightIncrease()
@@ -1016,51 +1014,65 @@ local function RepositionCastBarText(castBar)
     end
 end
 
+-- Spark is the thin highlight texture that travels across the bar as a cast progresses - purely
+-- decorative, not one of the bar's own protected dimensions, so resizing it never taints anything
+-- (confirmed via muleyoUI's SkinSpark, which does exactly this). Only its height changes; width
+-- stays whatever Blizzard's own template set, captured once rather than hardcoded, since that can
+-- differ from client to client.
+local function SkinCastBarSpark(castBar)
+    local spark = castBar.Spark
+    if not spark or not Accessible(spark) then
+        return
+    end
+    local native = castBarSparkNative[castBar]
+    if not native then
+        local okW, w = pcall(spark.GetWidth, spark)
+        local okH, h = pcall(spark.GetHeight, spark)
+        if not okW or not w or S.IsSecret(w) or w <= 0 or not okH or not h or S.IsSecret(h) or h <= 0 then
+            return
+        end
+        native = { w = w, h = h }
+        castBarSparkNative[castBar] = native
+    end
+    spark:SetSize(native.w, native.h + M:GetCastBarHeightIncrease())
+end
+
 -- Pulled out of ReapplyCastBarHeight so it can also run from the cast bar's own OnEvent hook
--- (HookCastBarIconEvents below) - confirmed live that the client resets castBar/container back to
--- native height itself whenever a new cast starts (UNIT_SPELLCAST_START etc.), and that reset
--- doesn't always run through NamePlateUnitFrameMixin:UpdateAnchors - the one hook ReapplyCastBarHeight
--- used to rely on exclusively. Without this, the bar would flash back to native size at the start
--- of a cast and only self-correct once some later, unrelated anchor pass happened to fire.
+-- (HookCastBarIconEvents below) - the client resets Spark/Text back to native whenever a new cast
+-- starts (UNIT_SPELLCAST_START etc.), and that reset doesn't always run through
+-- NamePlateUnitFrameMixin:UpdateAnchors - the one hook ReapplyCastBarHeight used to rely on
+-- exclusively. Without this, the bar would flash back to native size at the start of a cast and
+-- only self-correct once some later, unrelated anchor pass happened to fire.
 local function ReapplyCastBarHeightCore(castBar)
-    if growingCastBarHeight or not Accessible(castBar) then
+    if not Accessible(castBar) then
         return
     end
     local container = castBar:GetParent()
-    if not container or not Accessible(container) then
-        return
-    end
-
-    local containerNative = castBarContainerNativeHeight[container]
-    if not containerNative then
-        local height = container:GetHeight()
-        if not height or S.IsSecret(height) or height <= 0 then
-            return
+    if container and Accessible(container) then
+        local containerNative = castBarContainerNativeHeight[container]
+        if not containerNative then
+            local height = container:GetHeight()
+            if height and not S.IsSecret(height) and height > 0 then
+                containerNative = height
+                castBarContainerNativeHeight[container] = containerNative
+            end
         end
-        containerNative = height
-        castBarContainerNativeHeight[container] = containerNative
-    end
-    local barNative = castBarNativeHeight[castBar]
-    if not barNative then
-        local height = castBar:GetHeight()
-        if not height or S.IsSecret(height) or height <= 0 then
-            return
+        local barNative = castBarNativeHeight[castBar]
+        if not barNative then
+            local height = castBar:GetHeight()
+            if height and not S.IsSecret(height) and height > 0 then
+                barNative = height
+                castBarNativeHeight[castBar] = barNative
+            end
         end
-        barNative = height
-        castBarNativeHeight[castBar] = barNative
+        if containerNative and barNative then
+            local increase = M:GetCastBarHeightIncrease()
+            container:SetHeight(containerNative + increase)
+            castBar:SetHeight(barNative + increase)
+        end
     end
-
-    local increase = M:GetCastBarHeightIncrease()
-    growingCastBarHeight = true
-    container:SetHeight(containerNative + increase)
-    -- Same-edge points (both on the bottom) don't redefine height the way opposing corners do,
-    -- so SetHeight right after this is the one thing left deciding it.
-    castBar:ClearAllPoints()
-    castBar:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
-    castBar:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-    castBar:SetHeight(barNative + increase)
+    pcall(SkinCastBarSpark, castBar)
     pcall(RepositionCastBarText, castBar)
-    growingCastBarHeight = false
 end
 
 local function ReapplyCastBarHeight(frame)
@@ -1280,12 +1292,23 @@ local function SkinCastBarIcon(castBar)
     if okTexture and currentTexture then
         clone.texture:SetTexture(currentTexture)
     end
-    local size = castBar:GetHeight()
-    if size and not S.IsSecret(size) and size > 0 then
+    -- Positioning is unconditional now - confirmed live as a real bug: on a sufficiently
+    -- restricted/tainted nameplate, castBar:GetHeight() below can fail or come back secret, and
+    -- since SetPoint used to live inside that same gated block, the clone was left with a size
+    -- (from EnsureCastBarIconClone's own default) but no anchor at all - invisible, not just
+    -- wrong-sized. Anchoring always, and only gating the *size* scaling on GetHeight succeeding,
+    -- means the icon is always somewhere sensible even when it can't be resized to match the bar.
+    clone.frame:ClearAllPoints()
+    clone.frame:SetPoint("RIGHT", castBar, "LEFT", -ICON_GAP, 0)
+    -- GetHeight() is called unprotected everywhere else SkinCastBarIcon reads from castBar, but a
+    -- throw here used to take down the whole function (SkinCastBarIcon is only pcall-wrapped from
+    -- the *outside*, by its caller) - skipping not just this resize but the texture/alpha/border
+    -- sync below it too, leaving the clone stuck at whatever (often smaller) size it last had.
+    -- Confirmed live as the cause of the icon "randomly" looking smaller than it should.
+    local okHeight, size = pcall(castBar.GetHeight, castBar)
+    if okHeight and size and not S.IsSecret(size) and size > 0 then
         size = size * ICON_SCALE
-        clone.frame:ClearAllPoints()
         clone.frame:SetSize(size, size)
-        clone.frame:SetPoint("RIGHT", castBar, "LEFT", -ICON_GAP, 0)
         clone.shield:SetSize(size, size)
     end
     clone.texture:SetAlpha(icon:IsShown() and 1 or 0)
@@ -1723,9 +1746,9 @@ end
 
 -- Debug (/smuve dump): whether the client's own anchor-update function was actually found and
 -- hooked (if not, ReapplyCastBarHeight only ever runs once, at Bind, and the client's next own
--- layout pass silently reverts it), plus the target's own cast bar/container live vs. cached
--- native heights, to tell "never hooked" apart from "hooked but the cached native height is
--- wrong" when the grown height doesn't stick (see ReapplyCastBarHeight above).
+-- layout pass silently reverts it), plus the target's own cast bar/Spark live vs. cached native
+-- sizes, to tell "never hooked" apart from "hooked but the cached native size is wrong" when the
+-- Spark resize doesn't stick (see ReapplyCastBarHeight above).
 function M:DebugLines()
     local lines = {}
     table.insert(lines, "NamePlateUnitFrameMixin=" .. tostring(NamePlateUnitFrameMixin) ..
@@ -1758,6 +1781,11 @@ function M:DebugLines()
         local okH, h = pcall(castBar.GetHeight, castBar)
         table.insert(lines, "castBar live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))) ..
             " cached native=" .. tostring(castBarNativeHeight[castBar]))
+        local spark = castBar.Spark
+        local sparkNative = castBarSparkNative[castBar]
+        local okSparkH, sparkH = spark and pcall(spark.GetHeight, spark)
+        table.insert(lines, "castBar.Spark live height=" .. (spark and (okSparkH and tostring(sparkH) or ("error:" .. tostring(sparkH))) or "nil") ..
+            " cached native=" .. (sparkNative and string.format("%.1fx%.1f", sparkNative.w, sparkNative.h) or "nil"))
         local okCount, numPoints = pcall(castBar.GetNumPoints, castBar)
         table.insert(lines, "castBar numPoints=" .. (okCount and tostring(numPoints) or ("error:" .. tostring(numPoints))))
         for i = 1, 2 do
