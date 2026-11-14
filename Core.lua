@@ -113,7 +113,7 @@ S.defaults = {
         scale = 1,              -- whole nameplate
         width = 200,            -- nameplate width
         barHeight = 15,         -- health bar height
-        castBarHeightIncrease = 2, -- grows the cast bar beyond its native height, enemies only
+        castBarHeight = 8,      -- absolute cast bar height, enemies only (not a native+offset)
         castBarFontScale = 1.2, -- cast bar's own text size, relative to its native size
         nameSize = 14,
         levelSize = 14,
@@ -572,6 +572,16 @@ S:On("ADDON_LOADED", function(_, loaded)
     -- new default ("dark").
     if SmuveUIDB.appearance and SmuveUIDB.appearance.colorMode == nil and SmuveUIDB.appearance.darkMode ~= nil then
         SmuveUIDB.appearance.colorMode = SmuveUIDB.appearance.darkMode and "dark" or "off"
+    end
+    -- The enemy nameplate cast bar's height setting switched from "native height + this many
+    -- extra pixels" to an absolute target height (confirmed live via /smuve dump as the real fix
+    -- for it sometimes never growing at all - the old model needed a read of the bar's own
+    -- height, which can come back secret on a restricted nameplate, to succeed before it would
+    -- grow anything). ~13 is this client's own observed native height, so a one-time coercion
+    -- here keeps an existing increase value landing on roughly the same visible size instead of
+    -- silently shrinking everyone's cast bar back down to just the raw increase amount.
+    if SmuveUIDB.nameplates and SmuveUIDB.nameplates.castBarHeightIncrease ~= nil and SmuveUIDB.nameplates.castBarHeight == nil then
+        SmuveUIDB.nameplates.castBarHeight = SmuveUIDB.nameplates.castBarHeightIncrease + 13
     end
     RemoveObsolete(SmuveUIDB)
     -- The old default ("DEFAULT", the client's own fonts) becomes the new one (Rajdhani Bold)

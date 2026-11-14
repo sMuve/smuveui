@@ -957,19 +957,28 @@ end
 -- debug dump's GetPoint calls - not rendering), not a sign the write itself is unsafe. Reapplied
 -- from both the anchor hook below and the cast bar's own OnEvent hook (HookCastBarIconEvents),
 -- since the client can reset it from either path.
+--
+-- An absolute target height (BetterBlizzPlates' and muleyoUI's own model: SetHeight/IconSize both
+-- read straight from a configured absolute value, never the bar's current height), not "native
+-- height + an increase" like this used to be - confirmed live via /smuve dump as the real fix,
+-- not just a patch: castBar:GetHeight() can come back secret on a sufficiently restricted
+-- nameplate, and the old native-height-plus-increase model needed that read to succeed before it
+-- would grow anything at all, so a plate where it stayed secret never grew, full stop, no matter
+-- how many fallbacks got layered on. Needing no read of the bar's own height at all removes the
+-- secret-value exposure entirely instead of working around it.
 local castBarWidgetEnemy = setmetatable({}, { __mode = "k" }) -- fontstring -> true while its plate is an enemy's
 local castBarEnemyFrame = setmetatable({}, { __mode = "k" })  -- NamePlateUnitFrame -> true while it's an enemy's
-local castBarNativeHeight = setmetatable({}, { __mode = "k" })          -- castBar -> height before we touched it
-local castBarContainerNativeHeight = setmetatable({}, { __mode = "k" }) -- CastBarsContainer -> height before we touched it
-local castBarSparkNative = setmetatable({}, { __mode = "k" }) -- castBar -> { w, h } of its Spark's native size
+local castBarSparkNativeWidth = setmetatable({}, { __mode = "k" }) -- castBar -> its Spark's native width
 local castBarFontHooked = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> true
 local castBarFontNative = setmetatable({}, { __mode = "k" })  -- cast bar fontstring -> its native (unscaled) size
 local castBarFontApplied = setmetatable({}, { __mode = "k" }) -- cast bar fontstring -> size we last set
 local castBarAnchorsHooked = false
 local scalingCastBarFont = false
 
-function M:GetCastBarHeightIncrease()
-    return DB().castBarHeightIncrease or 2
+local CAST_BAR_HEALTHBAR_GAP = 2 -- matches BetterBlizzPlates' own spacing constant for this same reservation
+
+function M:GetCastBarHeight()
+    return DB().castBarHeight or 8
 end
 
 function M:GetCastBarFontScale()
@@ -1016,25 +1025,24 @@ end
 
 -- Spark is the thin highlight texture that travels across the bar as a cast progresses - purely
 -- decorative, not one of the bar's own protected dimensions, so resizing it never taints anything
--- (confirmed via muleyoUI's SkinSpark, which does exactly this). Only its height changes; width
--- stays whatever Blizzard's own template set, captured once rather than hardcoded, since that can
--- differ from client to client.
+-- (confirmed via muleyoUI's SkinSpark, which does exactly this). Only its height changes, to the
+-- same absolute configured height as the bar itself; width stays whatever Blizzard's own template
+-- set, captured once rather than hardcoded, since that can differ from client to client.
 local function SkinCastBarSpark(castBar)
     local spark = castBar.Spark
     if not spark or not Accessible(spark) then
         return
     end
-    local native = castBarSparkNative[castBar]
-    if not native then
+    local width = castBarSparkNativeWidth[castBar]
+    if not width then
         local okW, w = pcall(spark.GetWidth, spark)
-        local okH, h = pcall(spark.GetHeight, spark)
-        if not okW or not w or S.IsSecret(w) or w <= 0 or not okH or not h or S.IsSecret(h) or h <= 0 then
+        if not okW or not w or S.IsSecret(w) or w <= 0 then
             return
         end
-        native = { w = w, h = h }
-        castBarSparkNative[castBar] = native
+        width = w
+        castBarSparkNativeWidth[castBar] = width
     end
-    spark:SetSize(native.w, native.h + M:GetCastBarHeightIncrease())
+    spark:SetSize(width, M:GetCastBarHeight())
 end
 
 -- Pulled out of ReapplyCastBarHeight so it can also run from the cast bar's own OnEvent hook
@@ -1043,32 +1051,54 @@ end
 -- NamePlateUnitFrameMixin:UpdateAnchors - the one hook ReapplyCastBarHeight used to rely on
 -- exclusively. Without this, the bar would flash back to native size at the start of a cast and
 -- only self-correct once some later, unrelated anchor pass happened to fire.
+-- BetterBlizzPlates' real technique, re-read in full from its CreateCastbarContainer and
+-- SetNameplateBarSizes source: it never repositions Blizzard's own native CastBarsContainer at
+-- all - it substitutes a private, addon-owned decoy frame for that specific table reference
+-- (frame.CastBarsContainer = CreateFrame("Frame", nil, frame)) and only ever directly repositions
+-- two things, both anchored straight to the plate itself rather than to each other: the REAL
+-- castBar StatusBar widget, fixed at a small constant offset from the bottom regardless of
+-- configured height, and the REAL HealthBarsContainer, lifted by height + that same offset + a
+-- small gap. That matches two live regressions this already cost: touching Blizzard's real
+-- CastBarsContainer's own anchors is what made the whole nameplate disappear (the first attempt,
+-- mirroring muleyoUI); HealthBarsContainer has been safe to touch throughout (the
+-- AdjustPointsOffset nudge that followed). That nudge still assumed the cast bar's own position
+-- trails the health bar's through some simple, fixed native relationship, though - non-monotonic
+-- results across height 8/14/20 (a growing gap at 20, a completely different name/badge overlap
+-- at 14 and 8) showed that assumption doesn't hold; Blizzard's own cast bar isn't simply "anchored
+-- below the health bar" the way it looks. This takes over both bars' Y position explicitly and
+-- absolutely instead, same as BBP, so neither one's position depends on whatever Blizzard's own
+-- internal layout logic does between them. X stays at the plate's own left/right edges (0 offset)
+-- rather than BBP's own width/icon-reservation math, since this addon's nameplate width is already
+-- controlled globally via C_NamePlate.SetNamePlateSize, not a per-bar inset.
+local CASTBAR_BOTTOM_OFFSET = 3 -- matches BetterBlizzPlates' own fixed low anchor for the cast bar itself (its "bottomPos", non-classic value)
+
+local function ReserveCastBarRoom(frame, castBar)
+    local healthContainer = frame.HealthBarsContainer
+    if not castBar or not Accessible(castBar) or not healthContainer or not Accessible(healthContainer) then
+        return
+    end
+    local height = M:GetCastBarHeight()
+    castBar:ClearAllPoints()
+    castBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, CASTBAR_BOTTOM_OFFSET)
+    castBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, CASTBAR_BOTTOM_OFFSET)
+    local healthY = height + CASTBAR_BOTTOM_OFFSET + CAST_BAR_HEALTHBAR_GAP
+    healthContainer:ClearAllPoints()
+    healthContainer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, healthY)
+    healthContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, healthY)
+end
+
 local function ReapplyCastBarHeightCore(castBar)
     if not Accessible(castBar) then
         return
     end
     local container = castBar:GetParent()
     if container and Accessible(container) then
-        local containerNative = castBarContainerNativeHeight[container]
-        if not containerNative then
-            local height = container:GetHeight()
-            if height and not S.IsSecret(height) and height > 0 then
-                containerNative = height
-                castBarContainerNativeHeight[container] = containerNative
-            end
-        end
-        local barNative = castBarNativeHeight[castBar]
-        if not barNative then
-            local height = castBar:GetHeight()
-            if height and not S.IsSecret(height) and height > 0 then
-                barNative = height
-                castBarNativeHeight[castBar] = barNative
-            end
-        end
-        if containerNative and barNative then
-            local increase = M:GetCastBarHeightIncrease()
-            container:SetHeight(containerNative + increase)
-            castBar:SetHeight(barNative + increase)
+        local height = M:GetCastBarHeight()
+        container:SetHeight(height)
+        castBar:SetHeight(height)
+        local frame = container:GetParent()
+        if frame then
+            pcall(ReserveCastBarRoom, frame, castBar)
         end
     end
     pcall(SkinCastBarSpark, castBar)
@@ -1292,37 +1322,21 @@ local function SkinCastBarIcon(castBar)
     if okTexture and currentTexture then
         clone.texture:SetTexture(currentTexture)
     end
-    -- Positioning is unconditional now - confirmed live as a real bug: on a sufficiently
-    -- restricted/tainted nameplate, castBar:GetHeight() below can fail or come back secret, and
-    -- since SetPoint used to live inside that same gated block, the clone was left with a size
-    -- (from EnsureCastBarIconClone's own default) but no anchor at all - invisible, not just
-    -- wrong-sized. Anchoring always, and only gating the *size* scaling on GetHeight succeeding,
-    -- means the icon is always somewhere sensible even when it can't be resized to match the bar.
+    -- Positioning is unconditional - confirmed live as a real past bug: this used to live inside
+    -- a block gated behind a successful castBar:GetHeight() read, so on a sufficiently restricted
+    -- nameplate the clone was left with a size (from EnsureCastBarIconClone's own default) but no
+    -- anchor at all - invisible, not just wrong-sized.
     clone.frame:ClearAllPoints()
     clone.frame:SetPoint("RIGHT", castBar, "LEFT", -ICON_GAP, 0)
-    -- Confirmed live via /smuve dump: castBar:GetHeight() itself can come back a secret value (not
-    -- just throw) on a sufficiently restricted nameplate - CastBarsContainer's own GetHeight read
-    -- fine in the same dump, only castBar's didn't. Since ReapplyCastBarHeightCore already caches
-    -- this exact bar's native height the first time it's successfully read (castBarNativeHeight),
-    -- preferring that cached value + the current increase setting over a fresh read sidesteps the
-    -- secret-value problem entirely, rather than just detecting and skipping it - which is what
-    -- left the icon stuck smaller than the now-correctly-grown bar, the actual bug reported live.
-    -- Falls back to a direct (still pcall/secret-guarded) read if the cache isn't populated yet.
-    local size
-    local native = castBarNativeHeight[castBar]
-    if native then
-        size = native + M:GetCastBarHeightIncrease()
-    else
-        local okHeight, height = pcall(castBar.GetHeight, castBar)
-        if okHeight and height and not S.IsSecret(height) and height > 0 then
-            size = height
-        end
-    end
-    if size and size > 0 then
-        size = size * ICON_SCALE
-        clone.frame:SetSize(size, size)
-        clone.shield:SetSize(size, size)
-    end
+    -- Sized off the same absolute configured height ReapplyCastBarHeightCore sets the bar to, not
+    -- a read of the bar's own current height - confirmed live via /smuve dump that
+    -- castBar:GetHeight() itself can come back a secret value (not just throw) on a sufficiently
+    -- restricted nameplate, which left the icon stuck smaller than the bar on exactly those
+    -- plates no matter how many read-and-fall-back layers got added. A plain config read has
+    -- nothing to be secret.
+    local size = M:GetCastBarHeight() * ICON_SCALE
+    clone.frame:SetSize(size, size)
+    clone.shield:SetSize(size, size)
     clone.texture:SetAlpha(icon:IsShown() and 1 or 0)
     SyncCastBarIconBorder(clone.texture, castBar)
 
@@ -1840,9 +1854,9 @@ end
 
 -- Debug (/smuve dump): whether the client's own anchor-update function was actually found and
 -- hooked (if not, ReapplyCastBarHeight only ever runs once, at Bind, and the client's next own
--- layout pass silently reverts it), plus the target's own cast bar/Spark live vs. cached native
--- sizes, to tell "never hooked" apart from "hooked but the cached native size is wrong" when the
--- Spark resize doesn't stick (see ReapplyCastBarHeight above).
+-- layout pass silently reverts it), plus the target's own cast bar/container/Spark live heights
+-- against the configured absolute height, to tell "never hooked" apart from "hooked but the
+-- client reverted it again" when the grown height doesn't stick (see ReapplyCastBarHeight above).
 function M:DebugLines()
     local lines = {}
     table.insert(lines, "NamePlateUnitFrameMixin=" .. tostring(NamePlateUnitFrameMixin) ..
@@ -1864,22 +1878,21 @@ function M:DebugLines()
     table.insert(lines, "frame.castBar=" .. tostring(frame.castBar) ..
         " frame.CastBarsContainer.castBar=" .. tostring(castBar) ..
         " same=" .. tostring(frame.castBar == castBar))
+    table.insert(lines, "configured height=" .. tostring(M:GetCastBarHeight()))
     if container then
         local okH, h = pcall(container.GetHeight, container)
-        table.insert(lines, "CastBarsContainer live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))) ..
-            " cached native=" .. tostring(castBarContainerNativeHeight[container]))
+        table.insert(lines, "CastBarsContainer live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))))
     else
         table.insert(lines, "no CastBarsContainer")
     end
     if castBar then
         local okH, h = pcall(castBar.GetHeight, castBar)
-        table.insert(lines, "castBar live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))) ..
-            " cached native=" .. tostring(castBarNativeHeight[castBar]))
+        table.insert(lines, "castBar live height=" .. (okH and tostring(h) or ("error:" .. tostring(h))))
         local spark = castBar.Spark
-        local sparkNative = castBarSparkNative[castBar]
+        local sparkWidth = castBarSparkNativeWidth[castBar]
         local okSparkH, sparkH = spark and pcall(spark.GetHeight, spark)
         table.insert(lines, "castBar.Spark live height=" .. (spark and (okSparkH and tostring(sparkH) or ("error:" .. tostring(sparkH))) or "nil") ..
-            " cached native=" .. (sparkNative and string.format("%.1fx%.1f", sparkNative.w, sparkNative.h) or "nil"))
+            " cached native width=" .. tostring(sparkWidth))
         local okCount, numPoints = pcall(castBar.GetNumPoints, castBar)
         table.insert(lines, "castBar numPoints=" .. (okCount and tostring(numPoints) or ("error:" .. tostring(numPoints))))
         for i = 1, 2 do

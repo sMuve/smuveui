@@ -759,10 +759,10 @@ CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(la
         end)
 
     Header(layout, "Cast Bar (enemy nameplates)")
-    Slider(layout, "Height increase", "Makes the cast bar's moving highlight (Spark) taller, so the bar reads as bigger without resizing the bar itself.", 0, 20, 1,
-        function() return S.modules.Nameplates:GetCastBarHeightIncrease() end,
+    Slider(layout, "Height", "How tall the cast bar is.", 8, 30, 1,
+        function() return S.modules.Nameplates:GetCastBarHeight() end,
         function(value)
-            S.db.nameplates.castBarHeightIncrease = value
+            S.db.nameplates.castBarHeight = value
             S:Refresh("Nameplates")
         end)
     Slider(layout, "Text size", "Size of the cast bar's spell name and timer text, relative to its normal size.", 1, 2.5, 0.05,
