@@ -501,7 +501,41 @@ local function UpdateSoon()
     end)
 end
 
+-- The target/focus (and boss) frame's level number and its "skull" (too-high-to-tell) icon are
+-- supposed to be mutually exclusive, but confirmed live via /smuve dump that this client's own
+-- level-display code sometimes shows both at once: LevelText showing a plain number while
+-- HighLevelTexture was also shown, both anchored to the same center point on
+-- LevelBackgroundCircle. Confirmed via BetterBlizzFrames' own source (forever/BetterBlizzFrames.lua,
+-- FixSkullLevelText) as a named, dedicated bugfix for this exact client behavior - not something
+-- either addon causes. Hooks CheckLevel, the native method responsible for this decision, and
+-- clears the number's text whenever the skull is shown, right when the client itself just updated
+-- it, rather than polling for the mismatch afterward.
+local function ClearSkullLevelText(frame)
+    local content = frame.TargetFrameContent
+    local highLevelTexture = content and content.TargetFrameContentContextual and content.TargetFrameContentContextual.HighLevelTexture
+    if highLevelTexture and highLevelTexture:IsShown() then
+        local levelText = content.TargetFrameContentMain and content.TargetFrameContentMain.LevelText
+        if levelText then
+            levelText:SetText("")
+        end
+    end
+end
+
+local skullLevelHooked = {}
+
+local function FixSkullLevelText()
+    for _, name in ipairs({ "TargetFrame", "FocusFrame", "Boss1TargetFrame", "Boss2TargetFrame",
+        "Boss3TargetFrame", "Boss4TargetFrame", "Boss5TargetFrame" }) do
+        local frame = _G[name]
+        if frame and frame.CheckLevel and frame.TargetFrameContent and not skullLevelHooked[frame] then
+            skullLevelHooked[frame] = true
+            hooksecurefunc(frame, "CheckLevel", ClearSkullLevelText)
+        end
+    end
+end
+
 function M:Init()
+    FixSkullLevelText()
     EnsureBars()
     SetupNames()
     self:ApplyNameGlow()
