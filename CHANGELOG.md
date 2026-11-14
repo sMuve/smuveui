@@ -2,6 +2,13 @@
 
 All notable changes to this addon are documented here.
 
+## 0.9.1 - 2026-11-14
+- Fixed the player and target frame's resource bar showing the wrong color, or an unusually dark one, for non-Mana classes when using the default bar texture.
+- Fixed the enemy nameplate cast bar's spell icon sometimes rendering smaller than it should.
+- Fixed the enemy nameplate cast bar occasionally losing its custom look (height, border, spell icon) entirely.
+- Fixed a curated debuff icon (such as Weakened Soul) disappearing as soon as combat started, if an unrelated debuff on the same unit happened to become unreadable at the same time.
+- New: arrow keys now move the text cursor and cycle through previously sent chat lines without needing to hold Alt (Options -> Chat & Social -> Chat), on by default.
+
 ## 0.9.0 - 2026-11-13
 - New: a "what's new" popup shows once after SmuveUI updates, listing what changed since you last saw it. Can be turned off from its own checkbox, or from a new control at the bottom of the Options window (not tucked under any category).
 - The Options window's title now shows the installed version number next to "SmuveUI".
