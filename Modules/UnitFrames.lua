@@ -360,7 +360,7 @@ end
 -- Blizzard's own anchor already is by this relative amount, leaving the horizontal position -
 -- never reported as wrong - untouched, and sidesteps needing to read the secret anchor at all.
 -- Guarded to run once per login/reload only: calling it again would compound the offset further.
-local PLAYER_MANA_TEXT_NUDGE_Y = 3 -- a few px down; confirmed live as the right direction/amount
+local PLAYER_MANA_TEXT_NUDGE_Y = 2 -- a few px down; confirmed live as the right direction/amount (was 3 - too close to the bar's own border, nudged back up 1px)
 local playerManaTextNudged = false
 
 local function NudgePlayerManaText()
