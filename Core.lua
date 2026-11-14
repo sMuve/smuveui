@@ -151,6 +151,7 @@ S.defaults = {
         nameClassColor = false,
         nameCentered = false,   -- party frames only
         nameHidden = false,
+        nameOutline = true,     -- outlines the name text, same as chat's own Outline option
         roleIconHidden = false,
         mouseoverHighlight = false,
         soloVisible = false,    -- keeps the party frame shown while not in a group

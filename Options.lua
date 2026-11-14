@@ -881,6 +881,7 @@ CATEGORIES[16] = { key = "raidFrames", title = "Raid & Party Frames", build = fu
         end)
     end
     Checkbox(layout, "Class colored names", "Member names are shown in their class color.", RF("nameClassColor"))
+    Checkbox(layout, "Outlined names", "Outlines the name text, the same as chat's own Outline option.", RF("nameOutline"))
     local nameRow = Checkbox(layout, "Centered names (party only)", "Centers the name on party frames instead of its default position.", RF("nameCentered"))
     CheckboxRight(nameRow, "Hide names", "Hides the name entirely.", RF("nameHidden"))
     Checkbox(layout, "Hide role icon", "Hides the default role icon on member frames.", RF("roleIconHidden"))

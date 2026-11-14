@@ -645,6 +645,19 @@ local function ApplyName(frame)
         end
     end
 
+    -- Same pattern as Chat.lua's own Outline option: re-read the current font/size rather than
+    -- assume one, and only toggle the OUTLINE flag, so a later client font-size change (this
+    -- fires from CompactUnitFrame_UpdateName, which runs far more often than just on a size
+    -- change) is never fought or lost.
+    local file, size, flags = name:GetFont()
+    if file and size then
+        local wantsOutline = db.nameOutline
+        local hasOutline = flags and flags:find("OUTLINE", 1, true) ~= nil
+        if wantsOutline ~= hasOutline then
+            name:SetFont(file, size, wantsOutline and "OUTLINE" or "")
+        end
+    end
+
     if db.nameCentered and IsPartyFrame(frame) then
         name:ClearAllPoints()
         name:SetPoint("CENTER", frame, "CENTER", 0, 0)
