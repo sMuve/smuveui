@@ -1449,6 +1449,86 @@ local function ApplyNPCNameOnlyAlpha(frame)
     end
 end
 
+-- A friendly NPC's "description" (the bracketed subname a tooltip shows under its name, e.g.
+-- "<General Goods Vendor>") isn't exposed through any direct unit API - UnitName/UnitClass have no
+-- equivalent field for it - but C_TooltipInfo.GetUnit(unit) returns it as an ordinary tooltip line
+-- without opening a real tooltip, confirmed via reference addon BetterBlizzPlates
+-- (forever/BetterBlizzPlates.lua, ScanNPCTitle/GetNPCTitle): the line right before the
+-- "Level NN ..." line is the NPC's subname, already wrapped in "<>" by the client itself. Cached
+-- per creature ID (parsed out of the unit's GUID) since a given NPC's subname never changes and
+-- GetUnit is comparatively costly to call on every nameplate update.
+local npcDescriptionCache = {}
+local LEVEL_LINE_PATTERN = TOOLTIP_UNIT_LEVEL and ("^" .. TOOLTIP_UNIT_LEVEL:gsub("%%s", ".+"))
+
+local function ScanNPCDescription(unit)
+    local data = C_TooltipInfo and C_TooltipInfo.GetUnit and C_TooltipInfo.GetUnit(unit)
+    local lines = data and data.lines
+    if not lines then
+        return nil
+    end
+    local description
+    for i = 2, #lines do
+        local text = lines[i].leftText
+        if text and not S.IsSecret(text) then
+            if LEVEL_LINE_PATTERN and text:find(LEVEL_LINE_PATTERN) then
+                return description
+            end
+            description = text
+        end
+    end
+    return description
+end
+
+local function GetNPCDescription(unit)
+    local guid = UnitGUID(unit)
+    if not guid or S.IsSecret(guid) then
+        return ScanNPCDescription(unit)
+    end
+    local npcID = select(6, strsplit("-", guid))
+    if not npcID then
+        return ScanNPCDescription(unit)
+    end
+    local description = npcDescriptionCache[npcID]
+    if description == nil then
+        description = ScanNPCDescription(unit) or false
+        npcDescriptionCache[npcID] = description
+    end
+    return description or nil
+end
+
+-- Shown only in name-only mode (there's no room for it once the health bar is back), right below
+-- the name, in whatever text the tooltip already uses - including its own surrounding "<>".
+local function ApplyNPCDescription(frame)
+    if not Accessible(frame) or not frame.name or not Accessible(frame.name) then
+        return
+    end
+    local show = frame:IsFriend() and not frame:IsPlayer() and DB().friendlyNameOnly
+    local description = show and GetNPCDescription(frame.unit)
+    if not description or description == "" then
+        if frame.smuveNPCDescription then
+            frame.smuveNPCDescription:Hide()
+        end
+        return
+    end
+    local text = frame.smuveNPCDescription
+    if not text then
+        -- No font template here (that'd mean the client's default font, un-outlined): matches the
+        -- rest of this module's own overlay text (e.g. the aura duration/count text above), which
+        -- always goes through SetFont with an outline so it stays readable over a nameplate's
+        -- always-busy background, and through S:GetFont() so it follows the user's own font pick.
+        text = frame:CreateFontString(nil, "OVERLAY")
+        frame.smuveNPCDescription = text
+    end
+    local nameSize = select(2, frame.name:GetFont())
+    local size = (not S.IsSecret(nameSize) and nameSize) and math.max(8, nameSize - 2) or 10
+    text:SetFont(S:GetFont(), size, "OUTLINE")
+    text:SetTextColor(1, 1, 1)
+    text:ClearAllPoints()
+    text:SetPoint("TOP", frame.name, "BOTTOM", 0, -2)
+    text:SetText(description)
+    text:Show()
+end
+
 -- Name and level text size (nil: the client's size).
 local resizing = false
 local fontHooked = setmetatable({}, { __mode = "k" })
@@ -1580,6 +1660,7 @@ function M:Bind(unit)
     pcall(ApplyNameColor, frame, unit)
     pcall(ApplyTextSizes, frame)
     pcall(ApplyNPCNameOnlyAlpha, frame)
+    pcall(ApplyNPCDescription, frame)
     pcall(ApplyCastBarLook, frame, enemy)
     -- Whole nameplate scale (every plate; the aura icons on it scale along).
     local scale = db.scale or 1
@@ -1667,6 +1748,7 @@ function M:Init()
         for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
             if plate.UnitFrame then
                 pcall(ApplyNPCNameOnlyAlpha, plate.UnitFrame)
+                pcall(ApplyNPCDescription, plate.UnitFrame)
             end
         end
     end)
