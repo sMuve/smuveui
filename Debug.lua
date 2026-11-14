@@ -1021,6 +1021,19 @@ function S:Dump()
         table.insert(debug.unitFramesColor, "module not loaded")
     end
 
+    -- Minimap button box (see Modules\Minimap.lua): chasing a report of some icons showing
+    -- doubled - real LibDBIcon/minimap buttons vs. synthesized addon-compartment buttons, and
+    -- whether the two line up for every addon or not.
+    debug.minimapButtons = {}
+    local minimapModule = S.modules.Minimap
+    if minimapModule and minimapModule.DebugLines then
+        for _, line in ipairs(minimapModule:DebugLines()) do
+            table.insert(debug.minimapButtons, line)
+        end
+    else
+        table.insert(debug.minimapButtons, "module not loaded")
+    end
+
     -- Enemy nameplate cast bar height-grow feature (see Modules\Nameplates.lua): whether the
     -- client's own anchor-update function was found and hooked, and the target's cast
     -- bar/container live vs. cached native heights - to tell "never hooked" apart from "hooked

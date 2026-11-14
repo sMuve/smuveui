@@ -146,12 +146,42 @@ end
 
 local compartmentButtons = {} -- compartment entry -> button
 
+local function NormalizeForMatch(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+    return name:lower():gsub("%s+", ""):gsub("^libdbicon10_", "")
+end
+
+-- An addon's AddonCompartmentFrame display title and its LibDBIcon dataobject name are two
+-- separate registrations with no required relationship between them - confirmed live via /smuve
+-- dump as real duplicates (both a real button and a synthesized one for the same addon): "Nova
+-- Instance Tracker" vs. dataobject "NovaInstanceTracker", "DungeonJournal" vs.
+-- "ForeverDungeonJournal", and a plain-named (non-LibDBIcon) "PolestarMinimapButton" vs. "Polestar"
+-- - the exact "LibDBIcon10_" .. entry.text match this used to require missed all three. A
+-- case/space-insensitive substring match against every tracked button's name, not just
+-- LibDBIcon-prefixed ones, catches all three instead.
+local function HasMatchingButton(entryText)
+    local norm = NormalizeForMatch(entryText)
+    if not norm or norm == "" then
+        return false
+    end
+    for name in pairs(buttons) do
+        local normName = NormalizeForMatch(name)
+        if normName and (normName:find(norm, 1, true) or norm:find(normName, 1, true)) then
+            return true
+        end
+    end
+    return false
+end
+
 local function CompartmentEntries()
     local entries = {}
     local compartment = AddonCompartmentFrame
     for _, entry in ipairs(compartment and compartment.registeredAddons or {}) do
-        -- LibDBIcon addons may list themselves in the compartment as well; their own button is enough.
-        if type(entry) == "table" and entry.text and not buttons["LibDBIcon10_" .. entry.text] then
+        -- Addons that already have their own minimap/LibDBIcon button may list themselves in the
+        -- compartment too; their own button is enough, so skip giving them a second one here.
+        if type(entry) == "table" and entry.text and not HasMatchingButton(entry.text) then
             table.insert(entries, entry)
         end
     end
@@ -442,4 +472,30 @@ function M:Refresh()
     end
     self:Scan()
     self:Apply()
+end
+
+-- Debug (/smuve dump): chasing a report that some icons show doubled in the box. Prime suspect is
+-- CompartmentEntries()'s de-dup check - it only skips creating a synthesized compartment button
+-- when buttons["LibDBIcon10_" .. entry.text] already exists, which assumes an addon's
+-- AddonCompartmentFrame display title (entry.text) is identical to the dataobject name LibDBIcon
+-- used to build its button's name. Those are two separate registrations an addon can give
+-- different strings to - if they don't match, both a real LibDBIcon button and a synthesized
+-- compartment button end up in the grid for the same addon, overlapping since nothing else
+-- distinguishes them from a genuinely different addon.
+function M:DebugLines()
+    local lines = {}
+    table.insert(lines, "== buttons (name -> real minimap/LibDBIcon button)")
+    for name in pairs(buttons) do
+        table.insert(lines, "  " .. tostring(name) .. " boxed=" .. tostring(boxed[buttons[name]] ~= nil))
+    end
+    table.insert(lines, "== AddonCompartmentFrame.registeredAddons")
+    local compartment = AddonCompartmentFrame
+    for _, entry in ipairs(compartment and compartment.registeredAddons or {}) do
+        if type(entry) == "table" then
+            table.insert(lines, "  text=" .. tostring(entry.text) ..
+                " hasMatchingButton=" .. tostring(entry.text and HasMatchingButton(entry.text)) ..
+                " gotSynthesizedButton=" .. tostring(compartmentButtons[entry] ~= nil))
+        end
+    end
+    return lines
 end
