@@ -412,6 +412,19 @@ local function RecordLine(id, text, r, g, b)
     if type(text) ~= "string" or S.IsSecret(text) or text == "" then
         return
     end
+    -- A Battle.net whisper line's name isn't literal text - confirmed live via /smuve dump: it's
+    -- a |HBNplayer:|KsNN|k:...:BN_WHISPER:...|h[|Ksnn|k]|h hyperlink, where |KsNN|k is an opaque
+    -- masked token the client resolves to a display name live, from that session's own BattleNet
+    -- presence-ID table. Presence IDs are reassigned per login session, not stable across one -
+    -- confirmed live as the actual cause of a reported bug: the exact same stored line, replayed
+    -- after a relog, showed a completely different friend's name than who it was really with,
+    -- because "presence ID 36" no longer meant the same person. Never persisted across a reload
+    -- for exactly that reason - same treatment as the combat log window, just by content instead
+    -- of by window ID, since a BN whisper can land in any window depending on the user's own
+    -- chat tab setup.
+    if text:find("|HBNplayer:", 1, true) then
+        return
+    end
     local store = HistoryStore()
     local lines = store[id]
     if not lines then
