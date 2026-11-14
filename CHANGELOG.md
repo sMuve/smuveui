@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.9.3 - 2026-11-14
+- New: in "name only" mode, a friendly NPC's tooltip description (e.g. "<General Goods Vendor>") now shows below its name on its nameplate.
+- Fixed the target and focus frame occasionally showing a level number and the "too high to tell" skull icon overlapping on the same spot.
+
 ## 0.9.2 - 2026-11-14
 - New: party and raid frame member names can now be outlined (Options -> Raid Frames), on by default.
 - Battle.net whisper conversations are no longer kept in chat history across a reload or relog - doing so could show old messages under the wrong friend's name once you logged back in.
