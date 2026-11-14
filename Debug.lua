@@ -98,8 +98,10 @@ local function Describe(region, depth)
         if region.HasSecretValues then
             table.insert(parts, "secretvalues=" .. tostring(region:HasSecretValues()))
         end
-        local font, size = region:GetFont()
-        table.insert(parts, "font=" .. tostring(font) .. "@" .. tostring(size))
+        local font, size, flags = region:GetFont()
+        font, size, flags = Safe(font), Safe(size), Safe(flags)
+        table.insert(parts, "font=" .. tostring(font) .. "@" .. tostring(size) ..
+            " flags=" .. tostring(flags == "" and "<none>" or flags))
     end
     table.insert(parts, Points(region))
     return table.concat(parts, " | ")
