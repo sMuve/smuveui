@@ -1300,13 +1300,25 @@ local function SkinCastBarIcon(castBar)
     -- means the icon is always somewhere sensible even when it can't be resized to match the bar.
     clone.frame:ClearAllPoints()
     clone.frame:SetPoint("RIGHT", castBar, "LEFT", -ICON_GAP, 0)
-    -- GetHeight() is called unprotected everywhere else SkinCastBarIcon reads from castBar, but a
-    -- throw here used to take down the whole function (SkinCastBarIcon is only pcall-wrapped from
-    -- the *outside*, by its caller) - skipping not just this resize but the texture/alpha/border
-    -- sync below it too, leaving the clone stuck at whatever (often smaller) size it last had.
-    -- Confirmed live as the cause of the icon "randomly" looking smaller than it should.
-    local okHeight, size = pcall(castBar.GetHeight, castBar)
-    if okHeight and size and not S.IsSecret(size) and size > 0 then
+    -- Confirmed live via /smuve dump: castBar:GetHeight() itself can come back a secret value (not
+    -- just throw) on a sufficiently restricted nameplate - CastBarsContainer's own GetHeight read
+    -- fine in the same dump, only castBar's didn't. Since ReapplyCastBarHeightCore already caches
+    -- this exact bar's native height the first time it's successfully read (castBarNativeHeight),
+    -- preferring that cached value + the current increase setting over a fresh read sidesteps the
+    -- secret-value problem entirely, rather than just detecting and skipping it - which is what
+    -- left the icon stuck smaller than the now-correctly-grown bar, the actual bug reported live.
+    -- Falls back to a direct (still pcall/secret-guarded) read if the cache isn't populated yet.
+    local size
+    local native = castBarNativeHeight[castBar]
+    if native then
+        size = native + M:GetCastBarHeightIncrease()
+    else
+        local okHeight, height = pcall(castBar.GetHeight, castBar)
+        if okHeight and height and not S.IsSecret(height) and height > 0 then
+            size = height
+        end
+    end
+    if size and size > 0 then
         size = size * ICON_SCALE
         clone.frame:SetSize(size, size)
         clone.shield:SetSize(size, size)
