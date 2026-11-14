@@ -1048,6 +1048,19 @@ function S:Dump()
         table.insert(debug.castBarHeight, "module not loaded")
     end
 
+    -- Friendly NPC name-only mode (see Modules\Nameplates.lua): a friendly NPC's name sits way
+    -- off-center while its description stays put - target the NPC before dumping. Unlike an
+    -- enemy plate, this frame is never written to by this addon's own cast bar code, so its
+    -- GetPoint/GetTop/GetBottom reads should still be live and untainted.
+    debug.npcNameOnly = {}
+    if nameplates and nameplates.DebugNameOnlyLines then
+        for _, line in ipairs(nameplates:DebugNameOnlyLines()) do
+            table.insert(debug.npcNameOnly, line)
+        end
+    else
+        table.insert(debug.npcNameOnly, "module not loaded")
+    end
+
     -- Dark mode panel coverage: whether a handful of reported-as-unskinned panels exist yet, were
     -- ever walked by SkinFrame, and what pieces its texture-key/NineSlice checks found on them.
     debug.darkModePanels = {}

@@ -515,6 +515,12 @@ end
 
 local placingName = false
 
+-- Enemy-only: PlaceName/HookName are called from M:Bind's enemy-gated section further down ("if
+-- not (db.enabled and enemy) then ... return end" runs first), so neither of these has ever once
+-- executed for a friendly unit - confirmed live the hard way, across several fix attempts here
+-- that all turned out to be editing dead code for the friendly-NPC-name-only bug (see
+-- ApplyNPCNameOnlyPosition below for the actual, unconditional fix for that). This pair stays
+-- exactly what it always was: the enemy nameX/nameY repositioning feature.
 local function PlaceName(frame)
     local name = frame.name
     if not name or not Accessible(name) or placingName then
@@ -542,6 +548,73 @@ local function HookName(frame)
             pcall(PlaceName, frame)
         end
     end)
+end
+
+-- A friendly NPC's name sits way off-center once friendlyNameOnly fades its HealthBarsContainer
+-- to invisible (see ApplyNPCNameOnlyAlpha below) - confirmed via BetterBlizzPlates' own
+-- ApplyFakeNamePosition source: it explicitly stops anchoring the name to HealthBarsContainer the
+-- moment the health bar goes alpha-0 for this same case (its own "barHidden" branch), switching to
+-- the plate itself instead, never to the now-hidden bar. frame itself is never hidden, so it's a
+-- stable reference regardless of fade state. This has to run unconditionally, not through
+-- PlaceName/HookName above (those are enemy-only - see their own comment) - called straight from
+-- M:Bind alongside ApplyNPCNameOnlyAlpha/ApplyNPCDescription, both already unconditional. The Y
+-- offset is a first estimate (BBP's own equivalent constant is tuned for its own frame geometry,
+-- not transferable) - confirm live and adjust if the name sits at the wrong height once centering
+-- is fixed.
+local NAME_ONLY_TOP_OFFSET = -12
+local placingNPCName = false
+local npcNamePositionHooked = setmetatable({}, { __mode = "k" })
+
+local function ApplyNPCNameOnlyPosition(frame)
+    local name = frame.name
+    if not name or not Accessible(name) or placingNPCName then
+        return
+    end
+    -- placingNPCName is a single flag shared by every plate, not per-frame - wrapping the whole
+    -- body in pcall means a throw from :IsFriend()/:IsPlayer() (e.g. a secret value on a
+    -- sufficiently restricted plate) can't leave it stuck true forever, which would otherwise
+    -- silently disable this for every other nameplate for the rest of the session.
+    pcall(function()
+        local show = frame:IsFriend() and not frame:IsPlayer() and DB().friendlyNameOnly
+        if not show then
+            return
+        end
+        placingNPCName = true
+        local db = DB()
+        name:ClearAllPoints()
+        -- Confirmed live: the description (a fresh, auto-sized SmuveUI fontstring) landed
+        -- correctly centered while the name didn't, even anchored to the same frame-center point
+        -- - meaning the anchor itself was fine and frame.name's own FontString box is wider than
+        -- its text and left-justified, so the glyphs render off-center within their own box
+        -- regardless of where that box's anchor point sits. Same fix as RepositionCastBarText uses
+        -- for castBar.CastTargetNameText, for the identical reason: SetWidth(0) makes the box
+        -- auto-size to the text instead of keeping whatever fixed width Blizzard's template gave
+        -- it, so a center anchor actually centers it.
+        name:SetJustifyH("CENTER")
+        name:SetWidth(0)
+        name:SetPoint("TOP", frame, "TOP", db.nameX, NAME_ONLY_TOP_OFFSET)
+        placingNPCName = false
+    end)
+    placingNPCName = false
+    if not npcNamePositionHooked[name] then
+        npcNamePositionHooked[name] = true
+        -- The client re-anchors/re-widens the name on its own layout passes; ours goes back on.
+        -- Watches SetWidth too, not just SetPoint - a fix that only reasserted the anchor left
+        -- SetWidth(0) getting silently reverted with no visible effect, since the client resets
+        -- the width through a separate call a SetPoint-only hook never caught.
+        hooksecurefunc(name, "SetPoint", function()
+            if placingNPCName then
+                return
+            end
+            pcall(ApplyNPCNameOnlyPosition, frame)
+        end)
+        hooksecurefunc(name, "SetWidth", function()
+            if placingNPCName then
+                return
+            end
+            pcall(ApplyNPCNameOnlyPosition, frame)
+        end)
+    end
 end
 
 -- The client's own nameplate auras are hidden while ours are shown.
@@ -1524,7 +1597,17 @@ end
 
 -- Shown only in name-only mode (there's no room for it once the health bar is back), right below
 -- the name, in whatever text the tooltip already uses - including its own surrounding "<>".
+-- Re-enabled: confirmed live that the name is still off-center even with the description hidden,
+-- so the description was never the cause - the bug is in the name's own positioning.
+local NPC_DESCRIPTION_DISABLED = false
+
 local function ApplyNPCDescription(frame)
+    if NPC_DESCRIPTION_DISABLED then
+        if frame.smuveNPCDescription then
+            frame.smuveNPCDescription:Hide()
+        end
+        return
+    end
     if not Accessible(frame) or not frame.name or not Accessible(frame.name) then
         return
     end
@@ -1686,6 +1769,7 @@ function M:Bind(unit)
     pcall(ApplyNameColor, frame, unit)
     pcall(ApplyTextSizes, frame)
     pcall(ApplyNPCNameOnlyAlpha, frame)
+    pcall(ApplyNPCNameOnlyPosition, frame)
     pcall(ApplyNPCDescription, frame)
     pcall(ApplyCastBarLook, frame, enemy)
     -- Whole nameplate scale (every plate; the aura icons on it scale along).
@@ -1932,5 +2016,58 @@ function M:DebugLines()
     else
         table.insert(lines, "no castBar")
     end
+    return lines
+end
+
+-- Debug (/smuve dump): a friendly NPC's name sits way off-center in name-only mode (DB
+-- friendlyNameOnly) while its description (anchored relative to the name itself, not
+-- independently) stays put - target the NPC before dumping. PlaceName anchors the name to
+-- frame.HealthBarsContainer's TOP point unconditionally, so if that (invisible, alpha-faded)
+-- container isn't where it'd normally be while name-only is active, the name inherits whatever
+-- odd position it's actually at. This frame is never written to by this addon's enemy-only cast
+-- bar code (confirmed separately via DebugLines' enemyFrame(tracked) line reading nil for it), so
+-- unlike an enemy plate, GetPoint/GetTop/GetBottom here should still be live, untainted reads.
+function M:DebugNameOnlyLines()
+    local lines = {}
+    local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit and C_NamePlate.GetNamePlateForUnit("target")
+    local frame = plate and plate.UnitFrame
+    if not frame then
+        table.insert(lines, "no nameplate for the target")
+        return lines
+    end
+    local okFriend, isFriend = pcall(frame.IsFriend, frame)
+    local okPlayer, isPlayer = pcall(frame.IsPlayer, frame)
+    table.insert(lines, "friendlyNameOnly=" .. tostring(DB().friendlyNameOnly) ..
+        " isFriend=" .. (okFriend and tostring(isFriend) or ("error:" .. tostring(isFriend))) ..
+        " isPlayer=" .. (okPlayer and tostring(isPlayer) or ("error:" .. tostring(isPlayer))))
+    local function Edges(label, widget)
+        if not widget then
+            table.insert(lines, label .. "=nil")
+            return
+        end
+        local okTop, top = pcall(widget.GetTop, widget)
+        local okBottom, bottom = pcall(widget.GetBottom, widget)
+        local okLeft, left = pcall(widget.GetLeft, widget)
+        local okRight, right = pcall(widget.GetRight, widget)
+        table.insert(lines, label .. " top=" .. (okTop and tostring(top) or ("error:" .. tostring(top))) ..
+            " bottom=" .. (okBottom and tostring(bottom) or ("error:" .. tostring(bottom))) ..
+            " left=" .. (okLeft and tostring(left) or ("error:" .. tostring(left))) ..
+            " right=" .. (okRight and tostring(right) or ("error:" .. tostring(right))))
+        local okCount, numPoints = widget.GetNumPoints and pcall(widget.GetNumPoints, widget)
+        for i = 1, (okCount and numPoints) or 0 do
+            local okPoint, point, relativeTo, relativePoint, x, y = pcall(widget.GetPoint, widget, i)
+            if okPoint then
+                table.insert(lines, label .. " point" .. i .. "=" .. tostring(point) .. ">" ..
+                    tostring(relativeTo and (relativeTo.GetName and relativeTo:GetName() or relativeTo)) ..
+                    ":" .. tostring(relativePoint) .. "(" .. tostring(x) .. "," .. tostring(y) .. ")")
+            else
+                table.insert(lines, label .. " point" .. i .. " error=" .. tostring(point))
+            end
+        end
+    end
+    Edges("frame", frame)
+    Edges("HealthBarsContainer", frame.HealthBarsContainer)
+    Edges("name", frame.name)
+    Edges("description", frame.smuveNPCDescription)
     return lines
 end
