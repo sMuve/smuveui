@@ -958,7 +958,11 @@ CATEGORIES[18] = { key = "modules", title = "Modules", build = function(layout)
     Button(layout, "Reload UI", "Reloads the interface so module changes take effect.", ReloadUI)
 end }
 
--- The per-button list is rebuilt whenever the minimap module finds new buttons.
+-- The per-button list is rebuilt whenever the minimap module finds new buttons. Two columns,
+-- alphabetical, left column getting the extra one when the count is odd (ceil(n/2) left, the
+-- rest right) - matches every other two-column section on this page (Columns/NewLayout), unlike
+-- the hand-rolled layout table this used to build, which never set x/width and left every row
+-- stacked on the same spot as a result.
 function S:OptionsRefreshMinimapList()
     local page = pages.minimap and pages.minimap.content
     if not page or not page.listStart then
@@ -967,17 +971,21 @@ function S:OptionsRefreshMinimapList()
     for _, row in ipairs(page.buttonRows) do
         row:Hide()
     end
-    local layout = { page = page, y = page.listStart }
-    local list = S.modules.Minimap:GetButtons()
     page.buttonRows = {}
+    local list = S.modules.Minimap:GetButtons()
+    local layout = { page = page, y = page.listStart, x = 20 }
     if #list == 0 then
         local row = Note(layout, "No addon buttons found on the minimap.")
         table.insert(page.buttonRows, row)
         page:SetHeight(-layout.y + 10)
         return
     end
-    for _, entry in ipairs(list) do
-        local row = Checkbox(layout, entry.label, "Unchecked buttons always stay visible.", function()
+    table.sort(list, function(a, b) return a.label < b.label end)
+    local columns = Columns(layout, 2)
+    local leftCount = math.ceil(#list / 2)
+    for i, entry in ipairs(list) do
+        local column = columns[i <= leftCount and 1 or 2]
+        local row = Checkbox(column, entry.label, "Unchecked buttons always stay visible.", function()
             return not S.db.minimap.alwaysShown[entry.name]
         end, function(value)
             S.db.minimap.alwaysShown[entry.name] = (not value) or nil
@@ -985,6 +993,7 @@ function S:OptionsRefreshMinimapList()
         end)
         table.insert(page.buttonRows, row)
     end
+    JoinColumns(layout, columns)
     page:SetHeight(-layout.y + 10)
 end
 
