@@ -7,6 +7,32 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.9.4", notes = {
+        "Reworked the enemy nameplate cast bar: fixed the spell icon staying too small when the bar was made taller, and fixed the bar overlapping the health bar above it when grown.",
+        "Fixed a friendly NPC's name sitting off-center in \"name only\" mode.",
+        "Fixed the minimap button list in Options stacking on one spot instead of forming two columns.",
+        "Fixed some addons showing doubled icons in the minimap button box.",
+        "Fixed an error that could occur while changing the custom font setting.",
+    } },
+    { version = "0.9.3", notes = {
+        "New: in \"name only\" mode, a friendly NPC's tooltip description (e.g. \"<General Goods Vendor>\") now shows below its name on its nameplate.",
+        "Fixed the target and focus frame occasionally showing a level number and the \"too high to tell\" skull icon overlapping on the same spot.",
+    } },
+    { version = "0.9.2", notes = {
+        "New: party and raid frame member names can now be outlined (Options -> Raid Frames), on by default.",
+        "Battle.net whisper conversations are no longer kept in chat history across a reload or relog - doing so could show old messages under the wrong friend's name once you logged back in.",
+    } },
+    { version = "0.9.1", notes = {
+        "Fixed the player and target frame's resource bar showing the wrong color, or an unusually dark one, for non-Mana classes when using the default bar texture.",
+        "Fixed the enemy nameplate cast bar's spell icon sometimes rendering smaller than it should.",
+        "Fixed the enemy nameplate cast bar occasionally losing its custom look (height, border, spell icon) entirely.",
+        "Fixed a curated debuff icon (such as Weakened Soul) disappearing as soon as combat started, if an unrelated debuff on the same unit happened to become unreadable at the same time.",
+        "New: arrow keys now move the text cursor and cycle through previously sent chat lines without needing to hold Alt (Options -> Chat & Social -> Chat), on by default.",
+    } },
+    { version = "0.9.0", notes = {
+        "New: a \"what's new\" popup shows once after SmuveUI updates, listing what changed since you last saw it. Can be turned off from its own checkbox, or from a new control at the bottom of the Options window (not tucked under any category).",
+        "The Options window's title now shows the installed version number next to \"SmuveUI\".",
+    } },
     { version = "0.8.0", notes = {
         "New: Auto-open clams. Opens any clam sitting in your bags the moment it shows up, without touching anything else. Off by default (Options -> QoL -> Loot & Vendors).",
         "New: your debuffs bar can now be moved independently of your buffs bar, with its own \"Reset position\" button.",
