@@ -597,16 +597,22 @@ end
 local NINESLICE_OFFSET = -0.08
 
 -- Quest/dialogue content keeps its parchment background entirely, wherever it turns up: the
--- gossip window, item text "books", and the quest log's own reading pane, which also appears
--- nested inside other windows that do get skinned (the world map's embedded quest details).
--- Matched loosely by name since Blizzard nests the sub-frame differently depending on context.
+-- gossip window, item text "books", the guild charter/petition window, and the quest log's own
+-- reading pane, which also appears nested inside other windows that do get skinned (the world
+-- map's embedded quest details). PetitionFrame is still in PANELS above (its NineSlice border
+-- darkens normally, same as GossipFrame/QuestFrame's own borders do) - this only protects its
+-- parchment Bg, confirmed live as a reported "dark tint over the parchment" bug: its name doesn't
+-- contain "quest" at all, so it fell through to the plain S:Darken treatment meant for stone/metal
+-- panel backgrounds instead. Matched loosely by name since Blizzard nests the sub-frame
+-- differently depending on context.
 local function IsQuestPanel(frame)
     local name = frame.GetName and frame:GetName()
     if type(name) ~= "string" or S.IsSecret(name) then
         return false
     end
     local lower = name:lower()
-    return lower:find("quest") ~= nil or lower == "gossipframe" or lower == "itemtextframe"
+    return lower:find("quest") ~= nil or lower == "gossipframe" or lower == "itemtextframe" or
+        lower == "petitionframe"
 end
 
 local function SkinFrame(frame, depth, topQuestPanel)
@@ -738,6 +744,17 @@ local function SkinFrame(frame, depth, topQuestPanel)
                 end
             end
         end
+    end
+    -- PetitionFrame.TopTileStreaks: confirmed live via /fstack as a bright decorative overlay
+    -- sitting on top of the (correctly darkened) NineSlice.TopEdge underneath it - a /smuve dump
+    -- taken right after showed TopEdge's own liveColor already correctly darkened, so the overlay
+    -- on top of it is the only thing left undarkened. The generic "streak" name scan a few lines
+    -- up (regions loop, name:find("streak")) should already match this ("ui-frame-toptilestreaks",
+    -- names are lowercased first) and call S:HideWhenDark on it - same pattern as GossipFrame's
+    -- own direct-name fallback just above, for the same reason: whatever timing gap left
+    -- GossipFrameBg/GossipFrameMaterialBotLeft unreachable through the recursive walk alone.
+    if frame == PetitionFrame and frame.TopTileStreaks then
+        S:HideWhenDark(frame.TopTileStreaks)
     end
     -- QuestFrame/QuestFrameInset: confirmed live via /fstack that the remaining top/bottom strips on
     -- QuestFrame are its own direct regions - QuestFrameBg among them, the same "separate Bg global"
@@ -913,7 +930,7 @@ end
 -- a panel confirmed working, to tell "this frame's own structure doesn't match what SkinFrame
 -- looks for" apart from "SkinFrame isn't reaching this frame at all."
 local DEBUG_PANELS = {
-    "CharacterFrame", "GossipFrame",
+    "CharacterFrame", "GossipFrame", "PetitionFrame",
 }
 
 function M:DebugLines()
