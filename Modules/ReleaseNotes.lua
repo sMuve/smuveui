@@ -8,8 +8,10 @@ local M = S:NewModule("ReleaseNotes")
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
     { version = "0.9.4", notes = {
+        "Debuff icon borders colored by dispel type (Magic, Curse, Disease, Poison) are a little darker now, and can be turned off from Options -> Unit Frames if you'd rather keep a plain border.",
         "Reworked the enemy nameplate cast bar: fixed the spell icon staying too small when the bar was made taller, and fixed the bar overlapping the health bar above it when grown.",
         "Fixed a friendly NPC's name sitting off-center in \"name only\" mode.",
+        "Fixed the \"What's New\" popup sometimes showing an outdated release's notes instead of the current one's changes.",
         "Fixed the minimap button list in Options stacking on one spot instead of forming two columns.",
         "Fixed some addons showing doubled icons in the minimap button box.",
         "Fixed an error that could occur while changing the custom font setting.",

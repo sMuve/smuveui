@@ -3,8 +3,10 @@
 All notable changes to this addon are documented here.
 
 ## 0.9.4 - 2026-11-15
+- Debuff icon borders colored by dispel type (Magic, Curse, Disease, Poison) are a little darker now, and can be turned off from Options -> Unit Frames if you'd rather keep a plain border.
 - Reworked the enemy nameplate cast bar: fixed the spell icon staying too small when the bar was made taller, and fixed the bar overlapping the health bar above it when grown.
 - Fixed a friendly NPC's name sitting off-center in "name only" mode.
+- Fixed the "What's New" popup sometimes showing an outdated release's notes instead of the current one's changes.
 - Fixed the minimap button list in Options stacking on one spot instead of forming two columns.
 - Fixed some addons showing doubled icons in the minimap button box.
 - Fixed an error that could occur while changing the custom font setting.
