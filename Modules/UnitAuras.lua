@@ -115,7 +115,7 @@ local function CreateBlock(parent, helpful, size, perRow, rows, db, purgeGlow, u
     container:SetFlowLayoutMaximumLineSize(LineSize(perRow, size))
 
     local style = {
-        typeBorders = true, -- debuff borders in their dispel type's color, always on
+        typeBorders = S.db.appearance.debuffTypeColors,
         purgeGlow = purgeGlow,
         showDuration = db.showDuration,
         durationSize = db.durationSize,

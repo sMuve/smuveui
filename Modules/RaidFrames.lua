@@ -230,7 +230,7 @@ end
 
 local function InitAuraButton(auraFrame, size, helpful)
     S.modules.Nameplates.InitAuraButton(auraFrame, size, helpful, {
-        typeBorders = true,
+        typeBorders = S.db.appearance.debuffTypeColors,
         purgeGlow = false,
         showDuration = true,
         durationSize = math.max(6, math.floor(size * 0.4)),

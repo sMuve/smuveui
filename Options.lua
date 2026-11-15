@@ -655,6 +655,11 @@ CATEGORIES[10] = { key = "unitframes", title = "Unit Frames", build = function(l
         "The reaction colored band behind the name on the target and focus frames is hidden.",
         Setting("appearance", "hideNameGlow", "UnitFrames"))
 
+    Header(layout, "Debuffs")
+    Checkbox(layout, "Color debuff borders by type",
+        "Debuff icons on the player, target, focus, nameplates and raid frames get a border colored by dispel type (Magic, Curse, Disease, Poison). Off shows the plain black border every icon otherwise has.",
+        Setting("appearance", "debuffTypeColors", { "Nameplates", "UnitAuras", "Auras", "RaidFrames" }))
+
     Header(layout, "Big Debuffs (Experimental, WIP)")
     if not S.modules.BigDebuffs:IsSupported() then
         Note(layout, "This client doesn't offer the aura containers this needs, so it's inactive.")

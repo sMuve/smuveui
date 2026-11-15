@@ -27,6 +27,7 @@ S.defaults = {
         reactionColors = true,  -- other units: red / yellow / green by reaction (class color first)
         classColorNames = false, -- player names on the unit frames in class color
         hideNameGlow = true,    -- the reaction colored band behind the target / focus name
+        debuffTypeColors = true, -- debuff icon borders colored by dispel type (player/target/focus/nameplates/raid)
     },
     qol = {
         fastLoot = true,

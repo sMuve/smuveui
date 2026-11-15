@@ -211,14 +211,17 @@ local BORDER_SIZE = 2 -- pixels, like the player's own auras
 M.AddBlackBorder = AddBlackBorder
 M.BORDER_SIZE = BORDER_SIZE
 
+-- Darkened ~15% from the client's own raw debuff-type colors (requested live: the originals read
+-- as too bright/neon next to a plain black-bordered buff) while keeping each type distinct. A
+-- first pass darkened ~30%, confirmed live as too much.
 local DISPEL_TYPES = { "None", "Magic", "Curse", "Disease", "Poison", "Bleed", "Enrage" }
 local TYPE_COLORS = {
-    None = { 0.80, 0.00, 0.00 },
-    Magic = { 0.20, 0.60, 1.00 },
-    Curse = { 0.60, 0.00, 1.00 },
-    Disease = { 0.60, 0.40, 0.00 },
-    Poison = { 0.00, 0.60, 0.00 },
-    Bleed = { 0.80, 0.00, 0.00 },
+    None = { 0.68, 0.00, 0.00 },
+    Magic = { 0.17, 0.51, 0.85 },
+    Curse = { 0.51, 0.00, 0.85 },
+    Disease = { 0.51, 0.34, 0.00 },
+    Poison = { 0.00, 0.51, 0.00 },
+    Bleed = { 0.68, 0.00, 0.00 },
 }
 
 local typeColorMap
@@ -292,7 +295,7 @@ end
 -- Without it the nameplate settings apply.
 local function InitButton(button, size, helpful, style)
     style = style or {
-        typeBorders = true, -- debuff borders in their dispel type's color, always on
+        typeBorders = S.db.appearance.debuffTypeColors,
         purgeGlow = DB().purgeGlow,
         showDuration = true,
         durationSize = math.max(8, math.floor(size * 0.45)),
@@ -653,7 +656,7 @@ local function PreviewIcon(holder, size, texture, purgeable, dispelType)
     art:SetTexture(texture)
     art:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     local edges = AddBlackBorder(icon, icon, BORDER_SIZE)
-    local color = dispelType and TYPE_COLORS[dispelType]
+    local color = dispelType and S.db.appearance.debuffTypeColors and TYPE_COLORS[dispelType]
     for _, edge in ipairs(edges) do
         if purgeable then
             edge:SetVertexColor(0, 0, 0, 0)
