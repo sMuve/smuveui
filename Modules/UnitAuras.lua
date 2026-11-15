@@ -3,9 +3,20 @@ local M = S:NewModule("UnitAuras")
 
 -- Target and focus auras with adjustable icon size, icons per row and rows, and an optional
 -- duration text. Blizzard's aura container on these frames is switched off and replaced by the
--- client's own aura containers (CreateFrame("AuraContainer")), like on the nameplates: buffs in
--- rows below the frame, debuffs in rows below the buffs. The icons look like the nameplate ones
--- (black border, debuff type colors, purge glow) and show tooltips.
+-- client's own aura containers (CreateFrame("AuraContainer")), like on the nameplates. Buffs are
+-- always the block nearest the frame, debuffs always the outer one - but which SIDE of the frame
+-- that whole stack sits on depends on Edit Mode's "Buffs on Top" (see IsBuffsOnTop/UpdateHostility
+-- below): off, it hangs below the frame growing down (buffs nearest, debuffs lowest); on, the
+-- entire stack mirrors to sit above the frame growing up instead (buffs still nearest, debuffs
+-- now the highest), which puts buffs right against the frame and debuffs above them - hence the
+-- setting's name. The general technique (mirroring the whole stack's anchor direction, rather
+-- than just reordering two rows that stay below the frame either way) is ported from muleyoUI's
+-- own ReflowUnitAuraContainer (Modules/Forever/General/Theme/Auras.lua), confirmed live as
+-- necessary after a from-scratch reorder-only attempt here had no visible effect - but muleyoUI
+-- itself keeps debuffs nearest the frame both ways, which isn't the order wanted here; this
+-- addon's own pre-mirroring order was already buffs-nearest, so only the direction mirrors, not
+-- which block is nearest. The icons look like the nameplate ones (black border, debuff type
+-- colors, purge glow) and show tooltips.
 
 local START_X = 5       -- from the frame art's bottom left corner
 local START_Y = 9
@@ -47,6 +58,27 @@ local function BlockHeight(size, perRow, maxRows, count)
     end
     local rows = math.min(math.ceil(count / perRow), maxRows)
     return rows * size + (rows - 1) * SPACING
+end
+
+-- Blizzard's own Edit Mode "Buffs on Top" checkbox for this frame - previously read nowhere at
+-- all, confirmed live as a reported bug: checking it in Edit Mode had no effect on our own
+-- buff/debuff rows below the frame, since those are positioned entirely independently of it.
+-- TargetFrame/FocusFrame mix in Blizzard's own EditMode system functionality directly (the frame
+-- itself IS the system object), so GetSettingValueBool reads the live, currently-active layout's
+-- value with none of the ambiguity Debug.lua's own editModeLayout dump ran into trying to match
+-- C_EditMode.GetLayouts()'s "activeLayout" back to a specific layouts[] entry ("activeLayout isn't
+-- a plain index into layouts" per that comment) - this never needs to touch that table at all.
+-- Defaults to true (Blizzard's own default for both frames) if unreadable.
+local function IsBuffsOnTop(unit)
+    local frame = _G[FRAMES[unit]]
+    if not frame or not frame.GetSettingValueBool or not Enum.EditModeUnitFrameSetting then
+        return true
+    end
+    local ok, value = pcall(frame.GetSettingValueBool, frame, Enum.EditModeUnitFrameSetting.BuffsOnTop)
+    if not ok or value == nil or S.IsSecret(value) then
+        return true
+    end
+    return value
 end
 
 -- How many of the unit's current auras match (helpful/buffs or harmful/debuffs): plain aura data
@@ -258,24 +290,25 @@ local function Build(unit)
         host.debuffs = CreateBlock(frame, false, db.debuffSize, db.debuffPerRow, db.debuffRows, db, false, unit)
     end
 
-    -- Below the frame art; an empty block is one pixel tall, so the debuffs move up without buffs.
-    local anchorTo = (frame.TargetFrameContainer and frame.TargetFrameContainer.FrameTexture) or frame
-    for _, key in ipairs({ "buffsEnemy", "buffsFriendly" }) do
-        host[key]:ClearAllPoints()
-        host[key]:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", START_X, START_Y)
-    end
     for _, key in ipairs({ "buffsEnemy", "buffsFriendly", "debuffs" }) do
         host[key]:SetFrameLevel(frame:GetFrameLevel() + 5)
     end
     M:UpdateHostility(unit)
 end
 
--- Shows the buff block matching the unit (enemy or friendly) and hangs the debuffs below it.
+-- Shows the buff block matching the unit (enemy or friendly), and anchors it and the debuffs
+-- either below the frame art (growing down) or above it (growing up), per Edit Mode's "Buffs on
+-- Top" - see the header comment above for why it's a mirror of the whole stack, not just a
+-- reorder. Debuffs anchor to the frame either way; buffs anchor past the debuffs, same direction
+-- (an empty block is one pixel tall, so the other one moves to close the gap when its row is
+-- empty). Both anchor calls live here together, instead of split with Build above, so toggling
+-- the setting live (EDIT_MODE_LAYOUTS_UPDATED below) only has to re-run this, not a full rebuild.
 function M:UpdateHostility(unit)
     local host = hosts[unit]
     if not host or not host.buffsEnemy then
         return
     end
+    local frame = _G[FRAMES[unit]]
     local enemy = UnitExists(unit) and UnitCanAttack("player", unit)
     if S.IsSecret(enemy) then
         enemy = false
@@ -284,8 +317,40 @@ function M:UpdateHostility(unit)
     local inactive = enemy and host.buffsFriendly or host.buffsEnemy
     inactive:SetEnabled(false)
     inactive:Hide()
+
+    -- Buffs are always the block nearest the frame, debuffs always the outer one, in both
+    -- directions - confirmed live as the actual expected order (unlike muleyoUI's own
+    -- ReflowUnitAuraContainer, which keeps debuffs nearest the frame both ways instead; this
+    -- addon's own original, pre-mirroring order was already buffs-nearest, so mirroring only
+    -- needs to flip which side of the frame that same order sits on, not swap the two roles).
+    local anchorTo = (frame.TargetFrameContainer and frame.TargetFrameContainer.FrameTexture) or frame
+    local mirrored = IsBuffsOnTop(unit)
+    local point, relativePoint, frameOffsetY, gapOffsetY, growth
+    if mirrored then
+        -- Negative, not +START_Y: "BOTTOMLEFT" anchored to the frame's "TOPLEFT" needs to move
+        -- DOWN into the frame by the same tuck amount START_Y moves UP into it for the
+        -- below-frame case, since WoW's Y axis is positive-up - matches muleyoUI's own
+        -- AURA_MIRRORED_START_Y also being negative while its non-mirrored one is positive.
+        -- gapOffsetY is positive here (pushes the debuffs block further up, away from buffs) -
+        -- confirmed live as a real second bug: reusing frameOffsetY for this gap too (same small
+        -- tuck amount, not TYPE_GAP) left buffs and debuffs overlapping each other.
+        point, relativePoint, frameOffsetY, gapOffsetY, growth =
+            "BOTTOMLEFT", "TOPLEFT", -START_Y, TYPE_GAP, AnchorUtil.FlowDirection.Up
+    else
+        point, relativePoint, frameOffsetY, gapOffsetY, growth =
+            "TOPLEFT", "BOTTOMLEFT", START_Y, -TYPE_GAP, AnchorUtil.FlowDirection.Down
+    end
+
+    active:ClearAllPoints()
+    active:SetPoint(point, anchorTo, relativePoint, START_X, frameOffsetY)
+    active:SetFlowLayoutAnchorPoint(point)
+    active:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, growth)
+
     host.debuffs:ClearAllPoints()
-    host.debuffs:SetPoint("TOPLEFT", active, "BOTTOMLEFT", 0, -TYPE_GAP)
+    host.debuffs:SetPoint(point, active, relativePoint, 0, gapOffsetY)
+    host.debuffs:SetFlowLayoutAnchorPoint(point)
+    host.debuffs:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, growth)
+
     for _, container in ipairs({ active, host.debuffs }) do
         container:SetUnit(unit)
         container:SetEnabled(true)
@@ -390,7 +455,10 @@ local function ApplySpellBar(unit)
     end
     bar.smuveReanchoring = true
     local ok, err = pcall(function()
-        if not db.enabled or not host or not host.debuffs then
+        -- Mirrored (Edit Mode's "Buffs on Top"): the whole aura stack moved above the frame, so
+        -- nothing of ours occupies space below it any more - the bar goes back to wherever
+        -- Blizzard's own native anchor puts it, same as the "disabled" case just below.
+        if not db.enabled or not host or not host.debuffs or IsBuffsOnTop(unit) then
             if original then
                 bar:ClearAllPoints()
                 bar:SetPoint(original.point, original.relativeTo, original.relativePoint, original.x, original.y)
@@ -511,6 +579,12 @@ function M:Init()
         Update("focus")
         pcall(FixFocusFlashAnchor)
     end)
+    -- Picks up a live "Buffs on Top" toggle in Edit Mode immediately, without needing a target
+    -- change first.
+    S:On("EDIT_MODE_LAYOUTS_UPDATED", function()
+        Update("target")
+        Update("focus")
+    end)
     -- A plain client bug, confirmed live via /smuve dump: FocusFrame's own in-combat glow
     -- (TargetFrameContainer.Flash) comes anchored to TargetFrame.TargetFrameContainer instead of
     -- its own FocusFrame.TargetFrameContainer - every sibling texture on the same frame anchors
@@ -539,6 +613,36 @@ function M:Init()
             SafeBuild("target")
         end
     end)
+end
+
+-- Debug (/smuve dump): whether GetSettingValueBool actually exists and what it returns live for
+-- each frame, since a reported "Buffs on Top stayed checked but had no effect" needs to tell
+-- apart "read the wrong value" from "read it right but the anchor swap itself didn't apply" -
+-- the old editModeLayout dump elsewhere can't settle this on its own (it may not even be reading
+-- the active layout - see that section's own comment on activeLayout ambiguity).
+function M:DebugLines()
+    local lines = {}
+    for _, unit in ipairs({ "target", "focus" }) do
+        local frame = _G[FRAMES[unit]]
+        lines[#lines + 1] = unit .. " frame=" .. tostring(frame) ..
+            " hasGetSettingValueBool=" .. tostring(frame and frame.GetSettingValueBool ~= nil)
+        if frame and frame.GetSettingValueBool then
+            local ok, value = pcall(frame.GetSettingValueBool, frame, Enum.EditModeUnitFrameSetting.BuffsOnTop)
+            lines[#lines + 1] = unit .. " raw GetSettingValueBool(BuffsOnTop)=" ..
+                (ok and tostring(value) or ("error:" .. tostring(value)))
+        end
+        lines[#lines + 1] = unit .. " IsBuffsOnTop()=" .. tostring(IsBuffsOnTop(unit))
+        local host = hosts[unit]
+        if host and host.buffsEnemy then
+            local okPoint1, point1 = pcall(host.buffsEnemy.GetPoint, host.buffsEnemy, 1)
+            local okPoint2, point2 = pcall(host.debuffs.GetPoint, host.debuffs, 1)
+            lines[#lines + 1] = unit .. " buffsEnemy point1=" .. (okPoint1 and tostring(point1) or ("error:" .. tostring(point1)))
+            lines[#lines + 1] = unit .. " debuffs point1=" .. (okPoint2 and tostring(point2) or ("error:" .. tostring(point2)))
+        else
+            lines[#lines + 1] = unit .. " no host/buffsEnemy yet"
+        end
+    end
+    return lines
 end
 
 -- Settings changed: new containers (slider drags settle first).

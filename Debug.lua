@@ -1061,6 +1061,19 @@ function S:Dump()
         table.insert(debug.npcNameOnly, "module not loaded")
     end
 
+    -- Edit Mode's "Buffs on Top" (Modules\UnitAuras.lua): whether GetSettingValueBool exists and
+    -- what it returns live, to tell "read the wrong value" apart from "read it right but the
+    -- anchor swap didn't apply" when toggling it in Edit Mode has no visible effect.
+    debug.buffsOnTop = {}
+    local unitAuras = S.modules.UnitAuras
+    if unitAuras and unitAuras.DebugLines then
+        for _, line in ipairs(unitAuras:DebugLines()) do
+            table.insert(debug.buffsOnTop, line)
+        end
+    else
+        table.insert(debug.buffsOnTop, "module not loaded")
+    end
+
     -- Dark mode panel coverage: whether a handful of reported-as-unskinned panels exist yet, were
     -- ever walked by SkinFrame, and what pieces its texture-key/NineSlice checks found on them.
     debug.darkModePanels = {}
