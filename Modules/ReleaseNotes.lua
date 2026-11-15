@@ -7,6 +7,9 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.9.5", notes = {
+        "Fixed Edit Mode's \"Buffs on Top\" setting having no effect on the target and focus frames' buffs and debuffs.",
+    } },
     { version = "0.9.4", notes = {
         "Debuff icon borders colored by dispel type (Magic, Curse, Disease, Poison) are a little darker now, and can be turned off from Options -> Unit Frames if you'd rather keep a plain border.",
         "Reworked the enemy nameplate cast bar: fixed the spell icon staying too small when the bar was made taller, and fixed the bar overlapping the health bar above it when grown.",

@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.9.5 - 2026-11-15
+- Fixed Edit Mode's "Buffs on Top" setting having no effect on the target and focus frames' buffs and debuffs.
+
 ## 0.9.4 - 2026-11-15
 - Debuff icon borders colored by dispel type (Magic, Curse, Disease, Poison) are a little darker now, and can be turned off from Options -> Unit Frames if you'd rather keep a plain border.
 - Reworked the enemy nameplate cast bar: fixed the spell icon staying too small when the bar was made taller, and fixed the bar overlapping the health bar above it when grown.
