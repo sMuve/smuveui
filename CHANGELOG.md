@@ -2,6 +2,13 @@
 
 All notable changes to this addon are documented here.
 
+## 0.9.4 - 2026-11-15
+- Reworked the enemy nameplate cast bar: fixed the spell icon staying too small when the bar was made taller, and fixed the bar overlapping the health bar above it when grown.
+- Fixed a friendly NPC's name sitting off-center in "name only" mode.
+- Fixed the minimap button list in Options stacking on one spot instead of forming two columns.
+- Fixed some addons showing doubled icons in the minimap button box.
+- Fixed an error that could occur while changing the custom font setting.
+
 ## 0.9.3 - 2026-11-14
 - New: in "name only" mode, a friendly NPC's tooltip description (e.g. "<General Goods Vendor>") now shows below its name on its nameplate.
 - Fixed the target and focus frame occasionally showing a level number and the "too high to tell" skull icon overlapping on the same spot.
