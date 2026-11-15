@@ -104,8 +104,16 @@ function M:Refresh()
     EachFontObject(function(fontObject)
         local _, size, flags = fontObject:GetFont()
         local file = useDefault and originalFonts[fontObject] or path
-        if file and size and size > 0 then
-            fontObject:SetFont(file, size, flags or "")
+        -- "DEFAULT" is this addon's own sentinel for "no custom font," never a real file path -
+        -- confirmed live as a reported crash (PlayerChoiceTextFont:SetFont(): Invalid font asset
+        -- (DEFAULT): file not found): a lazily-loaded Blizzard UI font object (PlayerChoiceTextFont
+        -- belongs to Blizzard_PlayerChoice, only loaded once the player has actually seen a Player
+        -- Choice popup) can appear in GetFonts() for the first time *after* M:Init() already took
+        -- its "original font" snapshot, leaving nothing valid to restore it to. The pcall is a
+        -- backstop for any other font object SetFont itself rejects, for whatever reason, rather
+        -- than assuming "DEFAULT" is the only way this can throw.
+        if file and file ~= "DEFAULT" and size and size > 0 then
+            pcall(fontObject.SetFont, fontObject, file, size, flags or "")
         end
     end)
 
