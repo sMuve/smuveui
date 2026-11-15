@@ -249,6 +249,24 @@ end
 -- Manual escape hatch for live testing: /run SmuveUI.modules.ReleaseNotes.DebugCheckVersion()
 M.DebugCheckVersion = CheckVersion
 
+-- A bare pcall swallowed a real login's own failure silently - confirmed live as the actual
+-- bug behind a reported "popup doesn't show" report that turned out NOT to be the stale
+-- ENTRIES table (already fixed separately): lastSeenVersion correctly advanced to the current
+-- version on a clean login (proving CheckVersion's own version-comparison logic ran to
+-- completion), yet no popup appeared and no error surfaced anywhere - only possible if
+-- ShowPopup/CreatePopup itself threw AFTER that point, caught by this pcall before it ever
+-- reached the user's own error-catching addon. Same pattern SafeBind (Modules\Nameplates.lua)
+-- already uses for this exact class of problem: report it once via geterrorhandler() instead of
+-- swallowing it, so a real failure is actually visible next time instead of a silent no-op.
+local reportedError = false
+local function SafeCheckVersion()
+    local ok, err = pcall(CheckVersion)
+    if not ok and not reportedError then
+        reportedError = true
+        geterrorhandler()(err)
+    end
+end
+
 function M:Init()
     local ev = CreateFrame("Frame")
     ev:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -259,9 +277,9 @@ function M:Init()
         -- working "what's new" popup on this same client; shorter delays tried previously here
         -- rendered nothing visible despite the underlying logic running correctly every time.
         if C_Timer then
-            C_Timer.After(4, function() pcall(CheckVersion) end)
+            C_Timer.After(4, SafeCheckVersion)
         else
-            pcall(CheckVersion)
+            SafeCheckVersion()
         end
     end)
 end
