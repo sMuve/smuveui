@@ -2,6 +2,12 @@
 
 All notable changes to this addon are documented here.
 
+## 0.11.0 - 2026-11-16
+- New: your Battle.net friends list now shows which game mode a friend is playing on - [PvP], [Normal], [RP] or [RP-PvP] - right after their zone. Shown for friends currently in WoW Forever; can be turned off under Options -> Chat & Social -> Social.
+- New: four darker bar textures (SmuveUI Dark Flat, Dark Smooth, Dark Satin and Dark Ribbed) for a more muted look on health and resource bars.
+- The bundled bar textures are now named "SmuveUI Flat", "SmuveUI Smooth", "SmuveUI Satin" and "SmuveUI Ribbed", so they no longer clash with other addons' textures of the same name. Your current choice is carried over automatically; if you had picked one of them inside another addon, select it again there under its new name.
+- Fixed a custom bar texture covering the rounded border of nameplate health bars.
+
 ## 0.10.0 - 2026-11-16
 - New: a "Dark" style for your own buffs and debuffs. It keeps the game's default buff and debuff display - position, size and Edit Mode included - and gives each icon a thin dark border with a subtle inner shadow, outlined texts and a white timer. Weapon imbues get a purple border (green for a rogue's poisons).
 - The Dark style is now the default for everyone. If you prefer the previous SmuveUI aura bars, choose "Smuve" under Options -> Unit Frames -> Player -> Style; your saved bar positions and sizes are kept.
