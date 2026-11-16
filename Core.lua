@@ -28,6 +28,7 @@ S.defaults = {
         reactionColors = true,  -- other units: red / yellow / green by reaction (class color first)
         classColorNames = false, -- player names on the unit frames in class color
         hideNameGlow = true,    -- the reaction colored band behind the target / focus name
+        hideResourceFlash = true, -- the white flash on the player's mana/resource bar when the resource is spent or gained
         debuffTypeColors = true, -- debuff icon borders colored by dispel type (player/target/focus/nameplates/raid)
     },
     qol = {

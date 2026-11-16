@@ -80,12 +80,21 @@ local function Describe(region, depth)
             " level=" .. tostring(Safe(region:GetFrameLevel())))
     end
     if region:IsObjectType("Texture") then
-        table.insert(parts, "atlas=" .. tostring(region.GetAtlas and region:GetAtlas()))
-        table.insert(parts, "file=" .. tostring(region:GetTexture()))
-        table.insert(parts, "layer=" .. tostring(region:GetDrawLayer()))
+        -- Safe() on atlas/file/layer too: confirmed live (a dump taken mid-cast) that a texture's
+        -- atlas or file can itself come back secret in combat - the player mana bar's
+        -- FeedbackFrame textures and ManaCostPredictionBar.FillMask did - and tostring() keeps a
+        -- secret value secret, so the unguarded version lost the whole line to a concat error.
+        table.insert(parts, "atlas=" .. tostring(Safe(region.GetAtlas and region:GetAtlas())))
+        table.insert(parts, "file=" .. tostring(Safe(region:GetTexture())))
+        table.insert(parts, "layer=" .. tostring(Safe(region:GetDrawLayer())))
         local r, g, b, a = region:GetVertexColor()
         table.insert(parts, string.format("color=%.2f,%.2f,%.2f,%.2f", tonumber(Safe(r)) or -1,
             tonumber(Safe(g)) or -1, tonumber(Safe(b)) or -1, tonumber(Safe(a)) or -1))
+        -- Glow/flash textures animate their own alpha rather than their vertex color; visible
+        -- tells a "shown" texture under a hidden parent apart from one really on screen.
+        table.insert(parts, "alpha=" .. tostring(Safe(region:GetAlpha())) ..
+            " visible=" .. tostring(Safe(region:IsVisible())) ..
+            " blend=" .. tostring(Safe(region.GetBlendMode and region:GetBlendMode())))
     elseif region:IsObjectType("FontString") then
         table.insert(parts, "text=" .. tostring(Safe(region:GetText())))
         table.insert(parts, "alpha=" .. tostring(Safe(region:GetAlpha())))

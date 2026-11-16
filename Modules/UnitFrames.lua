@@ -414,6 +414,22 @@ function M:ApplyNameGlow()
     end
 end
 
+-- Resource bar flash ----------------------------------------------------------------------------------
+-- The player frame's mana/resource bar carries a stock "you just spent/gained some" flash
+-- (ManaBar.FeedbackFrame: a copy of the bar art plus two glow textures). Confirmed live via a
+-- /smuve dump taken mid-cast: the bar copy and the loss glow are both plain white while it plays,
+-- which reads as white artifacts on the bar - with the client's Default texture too, so it is the
+-- client's own look, not a side effect of Modules\BarTextures.lua. Hidden through the frame's own
+-- alpha: the client animates the textures inside it, not (as far as the dump shows) the frame
+-- itself. ManaCostPredictionBar (the spell cost preview) is a separate sibling and stays
+-- untouched. Player only - the target's mana bar has no such frame.
+function M:ApplyResourceFlash()
+    local frame = S.Resolve("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.ManaBarArea.ManaBar.FeedbackFrame")
+    if frame and frame.SetAlpha then
+        frame:SetAlpha(S.db.appearance.hideResourceFlash and 0 or 1)
+    end
+end
+
 -- Target-of-target position -------------------------------------------------------------------------
 -- Pulled closer to the target frame's own portrait (10px right, 10px up from the client's own
 -- anchor), to free up the space between them for the target's buffs/debuffs. Captured once (like
@@ -539,7 +555,9 @@ function M:Init()
     EnsureBars()
     SetupNames()
     self:ApplyNameGlow()
+    self:ApplyResourceFlash()
     self:ApplyTotPosition()
+    S:On("PLAYER_ENTERING_WORLD", function() M:ApplyResourceFlash() end)
     S:On("UNIT_NAME_UPDATE", UpdateSoon)
 
     for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED" }) do
@@ -569,6 +587,7 @@ end
 function M:Refresh()
     self:UpdateAll()
     self:ApplyNameGlow()
+    self:ApplyResourceFlash()
 end
 
 -- Debug (/smuve dump): every tracked health bar this module colors, its remembered client color

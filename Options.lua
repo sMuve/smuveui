@@ -686,6 +686,9 @@ CATEGORIES[10] = { key = "unitframes", title = "Unit Frames", build = function(l
     Checkbox(layout, "Hide name glow",
         "The reaction colored band behind the name on the target and focus frames is hidden.",
         Setting("appearance", "hideNameGlow", "UnitFrames"))
+    Checkbox(layout, "Hide resource bar flash",
+        "The white flash on your own mana or resource bar whenever you spend or gain some is hidden. The preview of what a spell will cost stays.",
+        Setting("appearance", "hideResourceFlash", "UnitFrames"))
 
     Header(layout, "Debuffs")
     Checkbox(layout, "Color debuff borders by type",
