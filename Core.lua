@@ -596,6 +596,18 @@ S:On("ADDON_LOADED", function(_, loaded)
             SmuveUIDB.appearance.font = S.defaults.appearance.font
         end
     end
+    -- The four original bundled bar textures were renamed from bare "Flat"/"Smooth"/"Satin"/
+    -- "Ribbed" to "SmuveUI Flat" etc. (see Modules\BarTextures.lua's BUILTIN_TEXTURES for why).
+    -- Anyone who had one selected had ours - the bundled one always won over another addon's
+    -- texture of the same name - so carry that choice over. Once only: afterward a bare "Smooth"
+    -- can only mean another addon's texture, picked on purpose, and must stick.
+    if SmuveUIDB.appearance and not SmuveUIDB.appearance.barTextureRenamed then
+        SmuveUIDB.appearance.barTextureRenamed = true
+        local old = SmuveUIDB.appearance.barTexture
+        if old == "Flat" or old == "Smooth" or old == "Satin" or old == "Ribbed" then
+            SmuveUIDB.appearance.barTexture = "SmuveUI " .. old
+        end
+    end
     MergeDefaults(SmuveUIDB, S.defaults)
     S.db = SmuveUIDB
     -- Diagnostics (/smuve dump) get their own SavedVariables global rather than living in

@@ -7,14 +7,27 @@ local M = S:NewModule("BarTextures")
 -- AlternatePowerBar) - confirmed via BetterBlizzFrames' source (same client) as a genuinely
 -- separate widget, not just a conceptual distinction.
 
--- Four small, original textures bundled under Media\Statusbars - procedurally generated shapes
+-- Small, original textures bundled under Media\Statusbars - procedurally generated shapes
 -- (flat/gradient/sheen/ribbed), not copied artwork, so bundling them raises no licensing concern,
 -- same spirit as Fonts.lua's OFL-licensed Rajdhani.
+-- Every name carries a "SmuveUI " prefix: bare names like "Flat" or "Smooth" are what plenty of
+-- other addons call their own textures, and LibSharedMedia keeps whichever addon registered a
+-- name first - so sharing ours under a bare name either hid another addon's texture of that name
+-- or lost ours, and in our own dropdown the bundled one always shadowed the other. The first
+-- four shipped under their bare names originally; Core.lua carries a saved choice over once.
 local BUILTIN_TEXTURES = {
-    { name = "Flat", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveFlat.tga", shared = true },
-    { name = "Smooth", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveSmooth.tga", shared = true },
-    { name = "Satin", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveSatin.tga", shared = true },
-    { name = "Ribbed", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveRibbed.tga", shared = true },
+    { name = "SmuveUI Flat", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveFlat.tga", shared = true },
+    { name = "SmuveUI Smooth", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveSmooth.tga", shared = true },
+    { name = "SmuveUI Satin", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveSatin.tga", shared = true },
+    { name = "SmuveUI Ribbed", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveRibbed.tga", shared = true },
+    -- The same four at 70% brightness (generated from the files above: every color value
+    -- times 0.7, alpha untouched). A bar's color is its class/power color multiplied by the texture,
+    -- so these give the same pattern with a darker, more muted bar. Listed after the originals
+    -- on purpose: RESOURCE_BAR_FALLBACK below is BUILTIN_TEXTURES[1] and must stay "SmuveUI Flat".
+    { name = "SmuveUI Dark Flat", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveDarkFlat.tga", shared = true },
+    { name = "SmuveUI Dark Smooth", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveDarkSmooth.tga", shared = true },
+    { name = "SmuveUI Dark Satin", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveDarkSatin.tga", shared = true },
+    { name = "SmuveUI Dark Ribbed", path = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveDarkRibbed.tga", shared = true },
 }
 
 -- Share the bundled textures with every other addon via LibSharedMedia, same soft dependency as
