@@ -349,14 +349,71 @@ local function NamePlateHealthBar(plate)
     return container and container.healthBar
 end
 
-local function ApplyToNamePlateUnit(unit)
-    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+-- A custom texture is a plain square-cornered rectangle covering the health bar's whole rect, so
+-- on a nameplate it paints over the rounded inner corners and dark inner edge of the plate's own
+-- border (healthBar.bgTexture, which reaches into the bar's rect - see Modules\Nameplates.lua's
+-- DarkenBorder). The client's Default fill doesn't, since its own art already has that shape.
+-- Same fix BetterBlizzPlates uses on this client (BBP.ApplyMidnightMask): clip the fill with a
+-- MaskTexture - a stencil, not something drawn on top - so any texture, bundled or from another
+-- addon via LibSharedMedia, gets cut to the same rounded shape. The mask image is our own
+-- generated rounded rectangle (1px transparent margin, so the clamp mode below has a clean edge
+-- to extend), not BetterBlizzPlates' file.
+local NAMEPLATE_MASK = "Interface\\AddOns\\SmuveUI\\Media\\Statusbars\\SmuveNameplateMask.tga"
+-- How far the mask's edge sits inside the health bar container, in the plate's own units. Tuned
+-- by eye against the Default fill; the image's own 1px margin adds a little on top of this.
+local NAMEPLATE_MASK_INSET_X = 1
+local NAMEPLATE_MASK_INSET_Y = 1
+
+local nameplateMasks = setmetatable({}, { __mode = "k" }) -- healthBar -> its mask
+-- fill texture -> the mask currently attached to it. Keyed by the fill object itself rather than
+-- the bar, so a fill the client swapped out for a new object simply reads as "not masked yet".
+local maskedFills = setmetatable({}, { __mode = "k" })
+
+local function ApplyNamePlateMask(plate)
+    local frame = plate and plate.UnitFrame
+    local container = frame and frame.HealthBarsContainer
+    local bar = container and container.healthBar
+    if not bar or not Accessible(bar) or not bar.CreateMaskTexture or not bar.GetStatusBarTexture then
+        return
+    end
+    local fill = bar:GetStatusBarTexture()
+    if not fill or not fill.AddMaskTexture then
+        return
+    end
+    local mask = nameplateMasks[bar]
+    -- Default keeps the client's own look untouched: no mask at all.
+    if not ResolveTexture(S.db.appearance.barTexture) then
+        if mask and maskedFills[fill] == mask then
+            fill:RemoveMaskTexture(mask)
+            maskedFills[fill] = nil
+        end
+        return
+    end
+    if not mask then
+        mask = bar:CreateMaskTexture()
+        mask:SetTexture(NAMEPLATE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetPoint("TOPLEFT", container, "TOPLEFT", NAMEPLATE_MASK_INSET_X, -NAMEPLATE_MASK_INSET_Y)
+        mask:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -NAMEPLATE_MASK_INSET_X, NAMEPLATE_MASK_INSET_Y)
+        nameplateMasks[bar] = mask
+    end
+    if maskedFills[fill] ~= mask then
+        fill:AddMaskTexture(mask)
+        maskedFills[fill] = mask
+    end
+end
+
+local function ApplyToNamePlate(plate)
     ApplyTexture(NamePlateHealthBar(plate))
+    ApplyNamePlateMask(plate)
+end
+
+local function ApplyToNamePlateUnit(unit)
+    ApplyToNamePlate(C_NamePlate.GetNamePlateForUnit(unit))
 end
 
 local function ApplyToAllNamePlates()
     for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
-        pcall(ApplyTexture, NamePlateHealthBar(plate))
+        pcall(ApplyToNamePlate, plate)
     end
 end
 
@@ -534,6 +591,25 @@ function M:DebugLines()
         DescribeBar("AlternatePowerBar (should stay untouched)", prd.AlternatePowerBar, lines)
     else
         table.insert(lines, "no PersonalResourceDisplayFrame global")
+    end
+    table.insert(lines, "== Target nameplate")
+    local okPlate, targetPlate = pcall(C_NamePlate.GetNamePlateForUnit, "target")
+    local plateFrame = okPlate and targetPlate and targetPlate.UnitFrame
+    local plateContainer = plateFrame and Accessible(plateFrame) and plateFrame.HealthBarsContainer
+    if plateContainer then
+        local plateBar = plateContainer.healthBar
+        DescribeBar("healthBar", plateBar, lines)
+        local cw, ch = plateContainer:GetSize()
+        local bg = plateBar and plateBar.bgTexture
+        local bw, bh
+        if bg then
+            bw, bh = bg:GetSize()
+        end
+        table.insert(lines, string.format("  container size=%sx%s | bgTexture size=%sx%s | our mask=%s",
+            tostring(cw), tostring(ch), tostring(bw), tostring(bh),
+            tostring(plateBar and nameplateMasks[plateBar] ~= nil)))
+    else
+        table.insert(lines, "no accessible target nameplate (target something with a visible plate)")
     end
     table.insert(lines, "== PlayerFrame")
     local playerMain = S.Resolve("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain")
