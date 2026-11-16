@@ -56,6 +56,7 @@ S.defaults = {
         skipDeleteConfirmText = false, -- a plain click deletes rare+ items, no typing "DELETE"
         combatIndicator = false,  -- +COMBAT/-COMBAT flashed center screen entering/leaving combat
         friendFactionColors = true, -- tints Battle.net friend rows blue/red by their character's faction
+        friendGameMode = true,      -- "[PvP]"/"[Normal]" after a Battle.net friend's zone in the friends list
     },
     actionbars = {
         rangeIndicator = true,

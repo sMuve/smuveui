@@ -1035,6 +1035,34 @@ function S:Dump()
         table.insert(debug.barTextures, "module not loaded")
     end
 
+    -- Friends list: what the client reports about each online Battle.net friend's game mode
+    -- (Normal/PvP/Roleplay), for an indicator in the list (see Modules\FriendsList.lua's
+    -- DebugLines). The data part needs no window open; the row layout below does - open the
+    -- friends list before dumping. Note the row walk records the text shown on up to two rows
+    -- (friend names as displayed), unlike the data part, which leaves names and BattleTags out.
+    debug.friendsList = {}
+    local friendsList = S.modules.FriendsList
+    if friendsList and friendsList.DebugLines then
+        local ok, result = pcall(friendsList.DebugLines, friendsList)
+        if ok then
+            for _, line in ipairs(result) do
+                table.insert(debug.friendsList, line)
+            end
+        else
+            table.insert(debug.friendsList, "error: " .. tostring(result))
+        end
+        local rows, seen = friendsList:DebugVisibleRows(2)
+        table.insert(debug.friendsList, string.format(
+            "== rows: %s | walking %d visible (open the friends list before dumping)", tostring(seen), #rows))
+        for index, row in ipairs(rows) do
+            table.insert(debug.friendsList, string.format("== visible row %d: buttonType=%s id=%s elementData=%s",
+                index, tostring(row.buttonType), tostring(row.id), type(row.elementData)))
+            Walk(row, 0, 3, debug.friendsList)
+        end
+    else
+        table.insert(debug.friendsList, "module not loaded")
+    end
+
     -- UnitFrames' own class/reaction-color tracking per bar - whether it's touching a bar that
     -- shouldn't be colored (e.g. a resource bar), and what it remembers as "the client's own
     -- color" for each one it does track (see Modules\UnitFrames.lua).

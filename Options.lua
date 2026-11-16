@@ -604,6 +604,9 @@ CATEGORIES[8] = { key = "qol_chat_social", title = "Chat & Social", indent = tru
     Checkbox(right, "Color friend rows by faction",
         "Tints each Battle.net friend's row in the friends list blue for Alliance, red for Horde, based on the faction of their currently played character. Friends with no character data (offline, or playing something else) are left as-is.",
         Setting("qol", "friendFactionColors", "FriendsList"))
+    Checkbox(right, "Show friends' game mode",
+        "Adds the game mode a Battle.net friend is playing on, such as [PvP] or [Normal], after their zone in the friends list. Only shown for friends currently in WoW Forever.",
+        Setting("qol", "friendGameMode", "FriendsList"))
 
     JoinColumns(layout, columns)
 end }
