@@ -7,6 +7,9 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.11.1", notes = {
+        "The white flash on your own mana or resource bar whenever you spend or gain some is now hidden, for a calmer bar. The preview of what a spell will cost stays. If you liked the flash, untick \"Hide resource bar flash\" under Options -> Unit Frames.",
+    } },
     { version = "0.11.0", notes = {
         "New: your Battle.net friends list now shows which game mode a friend is playing on - [PvP], [Normal], [RP] or [RP-PvP] - right after their zone. Shown for friends currently in WoW Forever; can be turned off under Options -> Chat & Social -> Social.",
         "New: four darker bar textures (SmuveUI Dark Flat, Dark Smooth, Dark Satin and Dark Ribbed) for a more muted look on health and resource bars.",

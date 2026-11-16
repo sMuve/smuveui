@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.11.1 - 2026-11-17
+- The white flash on your own mana or resource bar whenever you spend or gain some is now hidden, for a calmer bar. The preview of what a spell will cost stays. If you liked the flash, untick "Hide resource bar flash" under Options -> Unit Frames.
+
 ## 0.11.0 - 2026-11-16
 - New: your Battle.net friends list now shows which game mode a friend is playing on - [PvP], [Normal], [RP] or [RP-PvP] - right after their zone. Shown for friends currently in WoW Forever; can be turned off under Options -> Chat & Social -> Social.
 - New: four darker bar textures (SmuveUI Dark Flat, Dark Smooth, Dark Satin and Dark Ribbed) for a more muted look on health and resource bars.
