@@ -7,6 +7,11 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.10.0", notes = {
+        "New: a \"Dark\" style for your own buffs and debuffs. It keeps the game's default buff and debuff display - position, size and Edit Mode included - and gives each icon a thin dark border with a subtle inner shadow, outlined texts and a white timer. Weapon imbues get a purple border (green for a rogue's poisons).",
+        "The Dark style is now the default for everyone. If you prefer the previous SmuveUI aura bars, choose \"Smuve\" under Options -> Unit Frames -> Player -> Style; your saved bar positions and sizes are kept.",
+        "Fixed dark mode tinting the parchment of the petition/charter window.",
+    } },
     { version = "0.9.5", notes = {
         "Fixed Edit Mode's \"Buffs on Top\" setting having no effect on the target and focus frames' buffs and debuffs.",
     } },

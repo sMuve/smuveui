@@ -2,6 +2,11 @@
 
 All notable changes to this addon are documented here.
 
+## 0.10.0 - 2026-11-16
+- New: a "Dark" style for your own buffs and debuffs. It keeps the game's default buff and debuff display - position, size and Edit Mode included - and gives each icon a thin dark border with a subtle inner shadow, outlined texts and a white timer. Weapon imbues get a purple border (green for a rogue's poisons).
+- The Dark style is now the default for everyone. If you prefer the previous SmuveUI aura bars, choose "Smuve" under Options -> Unit Frames -> Player -> Style; your saved bar positions and sizes are kept.
+- Fixed dark mode tinting the parchment of the petition/charter window.
+
 ## 0.9.5 - 2026-11-15
 - Fixed Edit Mode's "Buffs on Top" setting having no effect on the target and focus frames' buffs and debuffs.
 
