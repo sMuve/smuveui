@@ -15,6 +15,7 @@ S.defaults = {
         font = "Interface\\AddOns\\SmuveUI\\Media\\Fonts\\Rajdhani-Bold.ttf", -- "DEFAULT" keeps the client's fonts instead
         barTexture = "DEFAULT", -- health/resource bar texture on player/target/party/raid/nameplates; "DEFAULT" keeps the client's own
         auraEnabled = true,     -- replaces Blizzard's BuffFrame/DebuffFrame with our own; off needs a /reload
+        auraMode = "dark",      -- "dark" (the client's own, with a dark border) or "smuve" (our own bars, the older style); switching needs a /reload
         auraDurationSize = 12,
         auraBuffsPos = nil,     -- { point, x, y }; nil keeps the built-in default position
         auraDebuffsPos = nil,   -- { point, x, y }; nil keeps the built-in default position

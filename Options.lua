@@ -268,6 +268,22 @@ local function ButtonRight(row, text, tooltip, onClick)
     return button
 end
 
+-- The widgets above have no disabled state of their own, so the whole row is dimmed and a frame
+-- laid over it swallows the mouse instead. reason is that frame's tooltip.
+local function SetRowEnabled(row, enabled, reason)
+    row:SetAlpha(enabled and 1 or 0.4)
+    if not enabled and not row.blocker then
+        row.blocker = CreateFrame("Frame", nil, row)
+        row.blocker:SetAllPoints(row)
+        row.blocker:SetFrameLevel(row:GetFrameLevel() + 20)
+        row.blocker:EnableMouse(true)
+        AddTooltip(row.blocker, "Not available", reason)
+    end
+    if row.blocker then
+        row.blocker:SetShown(not enabled)
+    end
+end
+
 -- A button that captures the next key or mouse button pressed and stores it as a WoW binding
 -- string (e.g. "F", "SHIFT-F", "BUTTON4"); right-click clears it. Left/right mouse clicks can't
 -- be captured (the first is how you start/stop listening; both are reserved game-wide anyway).
@@ -378,6 +394,19 @@ local CATEGORIES = {}
 
 StaticPopupDialogs["SMUVEUI_FONT_RELOAD"] = {
     text = "SmuveUI: reload the interface now to apply the font change?",
+    button1 = RELOADUI or "Reload",
+    button2 = LATER or "Later",
+    OnAccept = function()
+        ReloadUI()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["SMUVEUI_AURA_RELOAD"] = {
+    text = "SmuveUI: reload the interface now to apply the aura style change?",
     button1 = RELOADUI or "Reload",
     button2 = LATER or "Later",
     OnAccept = function()
@@ -688,23 +717,53 @@ end }
 CATEGORIES[11] = { key = "player", title = "Player", indent = true, build = function(layout)
     Header(layout, "Auras")
     if not S.modules.Auras:IsSupported() then
-        Note(layout, "This client doesn't offer the aura containers these auras need, so they are inactive.")
+        Note(layout, "This client doesn't offer the aura containers the Smuve style needs, so only the Dark style is available.")
     end
-    Checkbox(layout, "Enable", "Replaces your buffs and debuffs with these adjustable ones. Turning it off needs a /reload.",
+    Checkbox(layout, "Enable", "Styles your buffs and debuffs in the style chosen below. Needs a /reload to take full effect.",
         Setting("appearance", "auraEnabled", "Auras"))
-    Slider(layout, "Aura duration size", "Text size of the remaining time and the stack count (top right) on your buffs and debuffs.",
-        6, 20, 1, Setting("appearance", "auraDurationSize", "Auras"))
-    Checkbox(layout, "Unlock aura bars",
+
+    -- Follows the saved style right away, even though the auras themselves only switch on reload.
+    local smuveRows = {}
+    local function UpdateAuraRows()
+        for _, row in ipairs(smuveRows) do
+            SetRowEnabled(row, S.db.appearance.auraMode == "smuve", "Only applies to the Smuve style.")
+        end
+    end
+    local function GetAuraMode()
+        return S.db.appearance.auraMode == "smuve" and "smuve" or "dark"
+    end
+    Dropdown(layout, "Style",
+        "Smuve replaces your buffs and debuffs with SmuveUI's own adjustable bars. Dark keeps the default buffs and debuffs exactly as they are - position, timers and stacks included - and only adds a dark border with a thin inner shadow to each icon shows the remaining time in white and outlines the texts. Changing this needs a reload.",
+        function()
+            return {
+                { value = "dark", text = "Dark" },
+                { value = "smuve", text = "Smuve" },
+            }
+        end, GetAuraMode, function(value)
+            if value == GetAuraMode() then
+                return
+            end
+            S.db.appearance.auraMode = value
+            UpdateAuraRows()
+            StaticPopup_Show("SMUVEUI_AURA_RELOAD")
+        end)
+
+    table.insert(smuveRows, Slider(layout, "Aura duration size", "Text size of the remaining time and the stack count (top right) on your buffs and debuffs.",
+        6, 20, 1, Setting("appearance", "auraDurationSize", "Auras")))
+    table.insert(smuveRows, Checkbox(layout, "Unlock aura bars",
         "Edit Mode doesn't offer this (both are drawn independently of the client's own BuffFrame/DebuffFrame), so each is moved by dragging it directly while this is checked. Always off after a reload.",
-        Setting("appearance", "auraBarsUnlocked", "Auras"))
+        Setting("appearance", "auraBarsUnlocked", "Auras")))
     local resetRow = Button(layout, "Reset buffs position", "Moves the buffs bar back to its default position.",
         function() S.modules.Auras:ResetPosition("buffs") end)
     ButtonRight(resetRow, "Reset debuffs position", "Moves the debuffs bar back to its default position.",
         function() S.modules.Auras:ResetPosition("debuffs") end)
-    Slider(layout, "Buffs scale", "Size of your buff icons.", 0.5, 2, 0.05, Setting("appearance", "auraBuffsScale", "Auras"))
-    Slider(layout, "Debuffs scale", "Size of your debuff icons.", 0.5, 2, 0.05, Setting("appearance", "auraDebuffsScale", "Auras"))
-    Slider(layout, "Buffs per row", "How many buff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraBuffsPerRow", "Auras"))
-    Slider(layout, "Debuffs per row", "How many debuff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraDebuffsPerRow", "Auras"))
+    table.insert(smuveRows, resetRow)
+    table.insert(smuveRows, Slider(layout, "Buffs scale", "Size of your buff icons.", 0.5, 2, 0.05, Setting("appearance", "auraBuffsScale", "Auras")))
+    table.insert(smuveRows, Slider(layout, "Debuffs scale", "Size of your debuff icons.", 0.5, 2, 0.05, Setting("appearance", "auraDebuffsScale", "Auras")))
+    table.insert(smuveRows, Slider(layout, "Buffs per row", "How many buff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraBuffsPerRow", "Auras")))
+    table.insert(smuveRows, Slider(layout, "Debuffs per row", "How many debuff icons before a new row starts.", 1, 20, 1, Setting("appearance", "auraDebuffsPerRow", "Auras")))
+    UpdateAuraRows()
+    table.insert(refreshers, UpdateAuraRows)
 end }
 
 CATEGORIES[12] = { key = "target", title = "Target", indent = true, build = function(layout)
@@ -914,7 +973,7 @@ local MODULE_NAMES = {
     Fonts = { "Global font", "The font chosen under Appearance." },
     BarTextures = { "Bar Texture", "The global statusbar texture for health and resource bars." },
     Tooltip = { "Tooltip", "Dark tooltips and class colored names." },
-    Auras = { "Player auras", "Your buffs and debuffs: black borders, duration and stacks inside the icon." },
+    Auras = { "Player auras", "Your buffs and debuffs, as SmuveUI's own bars or as the default ones with a dark border." },
     UnitFrames = { "Unit frames", "Class and reaction colored health bars, class colored names, your own name and the target's mana values." },
     StatusBars = { "Experience bar", "The experience and reputation bars' scale." },
     BarVisibility = { "Bar visibility", "Action bars, menu bar and bag bar shown always, on mouseover or hidden." },

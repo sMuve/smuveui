@@ -755,6 +755,11 @@ function S:Dump()
     -- client's native one (meant to be fully disabled - if it's still reporting real, visible
     -- children here, it isn't).
     debug.playerAuras = {}
+    local auras = S.modules.Auras
+    table.insert(debug.playerAuras, "mode active=" .. tostring(auras and auras.GetActiveMode and auras:GetActiveMode()) ..
+        " saved=" .. tostring(S.db.appearance.auraMode) ..
+        " decorated=" .. tostring(auras and auras.CountDecorated and auras:CountDecorated()) ..
+        " gradient=" .. tostring(auras and auras.GradientWorks and auras:GradientWorks()))
     local function DumpFrameGeometry(label, frame)
         if not frame then
             return
@@ -793,6 +798,28 @@ function S:Dump()
                         end
                     end
                     table.insert(debug.playerAuras, "  native children=" .. #children .. " shown=" .. shownCount)
+                end
+                table.insert(debug.playerAuras, "  auraFrames=" ..
+                    (type(hostFrame.auraFrames) == "table" and tostring(#hostFrame.auraFrames) or "nil"))
+                -- Each shown native button's own named regions (which border it carries, and
+                -- whether that's showing), for telling a weapon enchant apart from a plain buff.
+                for index, button in ipairs(type(hostFrame.auraFrames) == "table" and hostFrame.auraFrames or {}) do
+                    local okShown, shown = pcall(button.IsShown, button)
+                    if okShown and Safe(shown) == true then
+                        local parts = {}
+                        for key, value in pairs(button) do
+                            if type(key) == "string" and type(value) == "table" and value.GetObjectType then
+                                local okRegion, regionShown = pcall(value.IsShown, value)
+                                table.insert(parts, key .. ":" .. tostring(Safe(value:GetObjectType())) ..
+                                    "=" .. (okRegion and tostring(Safe(regionShown)) or "?"))
+                            end
+                        end
+                        table.sort(parts)
+                        local info = button.buttonInfo
+                        table.insert(debug.playerAuras, "  native #" .. index ..
+                            " auraType=" .. tostring(Safe(button.auraType or (type(info) == "table" and info.auraType))) ..
+                            " " .. table.concat(parts, " "))
+                    end
                 end
             end
             for _, widgetName in ipairs({ "ConsolidatedBuffs", "CollapseAndExpandButton" }) do

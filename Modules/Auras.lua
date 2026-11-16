@@ -85,8 +85,17 @@ local function Supported()
         and S.modules.Nameplates and S.modules.Nameplates.InitAuraButton ~= nil
 end
 
+-- "smuve" | "dark" | nil (off, or smuve without the containers it needs). Decided once in Init and
+-- never changed afterwards: neither mode's hooks on BuffFrame/DebuffFrame can be taken back, so a
+-- changed auraMode setting only applies after a reload.
+local activeMode
+
+function M:GetActiveMode()
+    return activeMode
+end
+
 local function Enabled()
-    return Supported() and DB().auraEnabled
+    return activeMode == "smuve" and DB().auraEnabled
 end
 
 local parents = {}    -- "buffs" | "debuffs" -> our own movable anchor frame
@@ -532,10 +541,289 @@ local function Build()
     M:ApplyUnlocked()
 end
 
-function M:Init()
-    if not Enabled() then
+-- Dark mode: the client's own buttons, decorated in place ---------------------------------------
+
+-- The header of this file explains why reskinning BuffFrame/DebuffFrame's own buttons was given
+-- up: they have no SetDurationText/AddDispelTypeTexture. This mode needs neither - it only adds
+-- textures on top of the icon, keeps the remaining time white and outlines the texts, and leaves
+-- every native region's content, font, size and position alone.
+-- Nothing is written onto the buttons themselves either, to keep the client's own aura code
+-- untainted.
+local decorated = setmetatable({}, { __mode = "k" }) -- native button -> its border/shadow textures
+
+local EDGE_SIZE = 1    -- pixels; thinner than the 2 every other aura border here uses, as requested live
+-- Pixels from the icon's edge, the first EDGE_SIZE of them under the border. A first pass (5 deep,
+-- 60% at the edge) left about a third of that showing over 3 pixels - confirmed live as invisible.
+local SHADOW_DEPTH = 7
+local SHADOW_DARK = CreateColor and CreateColor(0, 0, 0, 1)
+local SHADOW_CLEAR = CreateColor and CreateColor(0, 0, 0, 0)
+local gradientWorks = SHADOW_DARK ~= nil -- turns false for good the first time SetGradient refuses
+
+-- darkIsMax: SetGradient's second color is the top (vertical) or right (horizontal) end.
+local SIDES = {
+    { from = "TOPLEFT", to = "TOPRIGHT", flat = true, orientation = "VERTICAL", darkIsMax = true },
+    { from = "BOTTOMLEFT", to = "BOTTOMRIGHT", flat = true, orientation = "VERTICAL", darkIsMax = false },
+    { from = "TOPLEFT", to = "BOTTOMLEFT", flat = false, orientation = "HORIZONTAL", darkIsMax = false },
+    { from = "TOPRIGHT", to = "BOTTOMRIGHT", flat = false, orientation = "HORIZONTAL", darkIsMax = true },
+}
+
+local function SetThickness(strip, side, pixels)
+    if side.flat then
+        PixelUtil.SetHeight(strip, pixels)
+    else
+        PixelUtil.SetWidth(strip, pixels)
+    end
+end
+
+-- Anchored to the icon, never to the button, and inside the icon's own bounds: nothing has to be
+-- read back, moved or resized.
+local function AddStrip(button, icon, layer, sublevel, side, pixels)
+    local strip = button:CreateTexture(nil, layer, nil, sublevel)
+    strip:SetPoint(side.from, icon, side.from, 0, 0)
+    strip:SetPoint(side.to, icon, side.to, 0, 0)
+    SetThickness(strip, side, pixels)
+    return strip
+end
+
+-- The client recolors the remaining time itself as it runs out (yellow, then white/red), through
+-- plain SetTextColor/SetVertexColor calls on its own fontstring - the same thing this file's
+-- earlier in-place reskin undid the same way. Only the color: the text itself is the client's.
+-- White for the whole text: only the unit (h/m/s) is wanted in yellow, but the text is a secret
+-- string on this client and can't be recolored in part - that needs the text itself replaced.
+local recoloring = false
+
+local function KeepWhite(fontString)
+    if recoloring or not DB().auraEnabled then
         return
     end
+    recoloring = true
+    fontString:SetTextColor(1, 1, 1)
+    recoloring = false
+end
+
+local function ColorDuration(button)
+    local duration = button.Duration or button.duration
+    if type(duration) ~= "table" or not duration.SetTextColor then
+        return
+    end
+    hooksecurefunc(duration, "SetTextColor", KeepWhite)
+    if duration.SetVertexColor then
+        hooksecurefunc(duration, "SetVertexColor", KeepWhite)
+    end
+    KeepWhite(duration)
+end
+
+-- Every text the button carries (remaining time, stacks, anything else) keeps the client's own
+-- font and size and only gains an outline. The original flags are remembered so turning the
+-- feature off puts them back.
+local function CollectTexts(button, textures)
+    local seen = {}
+    local function Add(text)
+        if type(text) ~= "table" or seen[text] or not text.GetFont or not text.SetFont then
+            return
+        end
+        seen[text] = true
+        local font, size, flags = text:GetFont()
+        if font and not S.IsSecret(font) and not S.IsSecret(size) then
+            table.insert(textures.texts, { text = text, font = font, size = size, flags = flags })
+        end
+    end
+    Add(button.Duration or button.duration)
+    Add(button.Count or button.count)
+    for _, region in ipairs({ button:GetRegions() }) do
+        Add(region)
+    end
+end
+
+local function OutlineTexts(textures, outlined)
+    for _, entry in ipairs(textures.texts) do
+        entry.text:SetFont(entry.font, entry.size, outlined and "OUTLINE" or entry.flags or "")
+    end
+end
+
+-- Buttons are pooled: the same one can hold a weapon enchant now and a plain buff later, so this is
+-- re-checked on every pass rather than decided once. The client's own enchant border being shown is
+-- the signal (hidden through its alpha, which leaves IsShown alone).
+local function IsWeaponEnchant(button)
+    local border = button.TempEnchantBorder
+    if border and border.IsShown then
+        local shown = border:IsShown()
+        if not S.IsSecret(shown) and shown then
+            return true, border
+        end
+    end
+    local info = button.buttonInfo
+    local auraType = button.auraType or (type(info) == "table" and info.auraType)
+    return not S.IsSecret(auraType) and auraType == "TempEnchant", border
+end
+
+-- Same colors as Smuve mode's own imbue cells: green for a Rogue's poison, purple otherwise.
+local function UpdateEnchantLook(button, textures)
+    local enchant, border = IsWeaponEnchant(button)
+    enchant = enchant and DB().auraEnabled and true or false
+    if textures.enchant == enchant then
+        return
+    end
+    textures.enchant = enchant
+    local r, g, b = 0, 0, 0
+    if enchant then
+        r, g, b = 0.60, 0.00, 1.00
+        if PLAYER_CLASS == "ROGUE" then
+            r, g, b = 0.00, 0.60, 0.00
+        end
+    end
+    for _, edge in ipairs(textures.edges) do
+        edge:SetColorTexture(r, g, b, 1)
+    end
+    if border then
+        border:SetAlpha(enchant and 0 or 1)
+    end
+end
+
+local function DecorateButton(button)
+    if not button then
+        return
+    end
+    if decorated[button] then
+        UpdateEnchantLook(button, decorated[button])
+        return
+    end
+    if button:IsForbidden() or button.isAuraAnchor then
+        return
+    end
+    local icon = button.Icon or button.icon
+    if type(icon) ~= "table" or not icon.GetDrawLayer then
+        return
+    end
+    ColorDuration(button)
+    -- Just above the icon on its own layer, so the stack count and whatever border the client
+    -- draws itself stay on top.
+    local layer, sublevel = icon:GetDrawLayer()
+    sublevel = sublevel or 0
+    local textures = { edges = {}, texts = {}, enchant = false }
+    CollectTexts(button, textures)
+    OutlineTexts(textures, DB().auraEnabled)
+    for _, side in ipairs(SIDES) do
+        local shadow = AddStrip(button, icon, layer, math.min(sublevel + 1, 7), side, SHADOW_DEPTH)
+        shadow:SetColorTexture(1, 1, 1, 1)
+        if gradientWorks then
+            gradientWorks = pcall(shadow.SetGradient, shadow, side.orientation,
+                side.darkIsMax and SHADOW_CLEAR or SHADOW_DARK, side.darkIsMax and SHADOW_DARK or SHADOW_CLEAR)
+        end
+        if not gradientWorks then
+            shadow:SetColorTexture(0, 0, 0, 0.45)
+            SetThickness(shadow, side, EDGE_SIZE + 2)
+        end
+        table.insert(textures, shadow)
+    end
+    for _, side in ipairs(SIDES) do
+        local edge = AddStrip(button, icon, layer, math.min(sublevel + 2, 7), side, EDGE_SIZE)
+        edge:SetColorTexture(0, 0, 0, 1)
+        table.insert(textures, edge)
+        table.insert(textures.edges, edge)
+    end
+    if not DB().auraEnabled then
+        for _, texture in ipairs(textures) do
+            texture:Hide()
+        end
+    end
+    decorated[button] = textures
+    UpdateEnchantLook(button, textures)
+end
+
+local function DecorateHost(host)
+    if not host then
+        return
+    end
+    if type(host.auraFrames) == "table" then
+        for _, button in ipairs(host.auraFrames) do
+            DecorateButton(button)
+        end
+    end
+    local container = host.AuraContainer
+    local ok, children = pcall(function() return container and { container:GetChildren() } end)
+    if ok and children then
+        for _, button in ipairs(children) do
+            DecorateButton(button)
+        end
+    end
+end
+
+-- Cheap to repeat: an already decorated button is one table lookup.
+local function DecorateAll()
+    DecorateHost(BuffFrame)
+    DecorateHost(DebuffFrame)
+    -- Classic style aura buttons, if the client still uses them.
+    for i = 1, 32 do
+        DecorateButton(_G["BuffButton" .. i])
+    end
+    for i = 1, 16 do
+        DecorateButton(_G["DebuffButton" .. i])
+    end
+    for i = 1, 3 do
+        DecorateButton(_G["TempEnchant" .. i])
+    end
+end
+
+function M:GradientWorks()
+    return gradientWorks
+end
+
+function M:CountDecorated()
+    local count = 0
+    for _ in pairs(decorated) do
+        count = count + 1
+    end
+    return count
+end
+
+local function InitDark()
+    for _, host in ipairs({ BuffFrame or false, DebuffFrame or false }) do
+        if host then
+            for _, method in ipairs({ "UpdateAuraButtons", "Update", "UpdateGridLayout" }) do
+                if type(host[method]) == "function" then
+                    hooksecurefunc(host, method, DecorateAll)
+                end
+            end
+        end
+    end
+    if AuraButton_Update then
+        hooksecurefunc("AuraButton_Update", DecorateAll)
+    end
+    local events = CreateFrame("Frame")
+    events:SetScript("OnEvent", function(_, event, unit)
+        if event == "UNIT_AURA" and unit ~= "player" then
+            return
+        end
+        DecorateAll()
+        if event == "PLAYER_ENTERING_WORLD" then
+            -- Buttons for auras the player already had can be built a moment after this fires.
+            C_Timer.After(1, DecorateAll)
+            C_Timer.After(3, DecorateAll)
+        end
+    end)
+    for _, event in ipairs({ "UNIT_AURA", "PLAYER_ENTERING_WORLD", "WEAPON_ENCHANT_CHANGED", "WEAPON_SLOT_CHANGED" }) do
+        pcall(events.RegisterEvent, events, event)
+    end
+    -- Safety net: the hooks and events above were confirmed live (by this file's earlier in-place
+    -- reskin, which used the same ones) to still miss some buttons.
+    C_Timer.NewTicker(2, DecorateAll)
+    DecorateAll()
+end
+
+function M:Init()
+    if not DB().auraEnabled then
+        return
+    end
+    if DB().auraMode ~= "smuve" then
+        activeMode = "dark"
+        InitDark()
+        return
+    end
+    if not Supported() then
+        return
+    end
+    activeMode = "smuve"
     DB().auraBarsUnlocked = false -- always off after a reload
     -- Superseded outright, the same way EllesmereUI does it - nothing here depends on them being
     -- shown, sized, or anchored to any more.
@@ -552,6 +840,17 @@ end
 
 -- Settings changed: a new container (slider drags settle first).
 function M:Refresh()
+    if activeMode == "dark" then
+        local shown = DB().auraEnabled and true or false
+        for button, textures in pairs(decorated) do
+            for _, texture in ipairs(textures) do
+                texture:SetShown(shown)
+            end
+            OutlineTexts(textures, shown)
+            UpdateEnchantLook(button, textures)
+        end
+        return
+    end
     if not Enabled() then
         return
     end
