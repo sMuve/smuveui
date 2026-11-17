@@ -4,7 +4,7 @@ local M = S:NewModule("UnitFrames")
 -- Player, target, focus and target-of-target frames:
 --   * class colored health bars and names (players only; NPCs keep the client's colors),
 --   * the own-name fix (the client leaves your own name empty),
---   * mana values on target / focus lined up with the health values.
+--   * mana values on target / focus / pet lined up with the health values.
 --
 -- None of this hooks the client's unit frame update functions: hooks run in the middle of its
 -- updates (name, health, auras), and on this client anything an addon does there can leave the
@@ -382,6 +382,42 @@ local function NudgePlayerManaText()
     playerManaTextNudged = true
 end
 
+-- The pet frame's mana/power bar is wider than (and shifted left from) its health bar - 77px vs
+-- 70px, starting 3px further left (confirmed via /smuve dump: PetFrameManaBar anchors
+-- TOPLEFT>PetFrameHealthBar:BOTTOMLEFT(-3,-1), vs. PetFrameHealthBar's own 70px width) - so its
+-- right-anchored value text (RIGHT>PetFrameManaBar:RIGHT(0,0), the same relative offset as the
+-- health bar's own RIGHT>PetFrameHealthBar:RIGHT(0,0)) lands 4px further right than the health
+-- value, confirmed live as the pet's mana number sitting visibly further right than its health
+-- number. The left-anchored percent text (PetFrameManaBarTextLeft, LEFT>PetFrameManaBar:LEFT(4,0))
+-- was expected to be close enough to aligned already - the dump's static geometry suggested its
+-- own +4 offset nearly canceled the bars' 3px left shift - but confirmed live that it still needed
+-- to move left too, so it gets the same nudge treatment rather than trusting that math.
+-- AdjustPointsOffset (not ClearAllPoints+SetPoint), same reason as NudgePlayerManaText below:
+-- GetPoint() on these FontStrings came back secret on a dump taken in combat, so shifting
+-- whatever anchor Blizzard already set, rather than reading and recomputing it, is the only way
+-- this works reliably. Guarded to run once per login/reload only - calling it again would
+-- compound the offset further.
+local PET_MANA_TEXT_NUDGE_X = -5 -- confirmed live: -4 was still 1px too far right
+local PET_MANA_PERCENT_NUDGE_X = -2 -- confirmed live: -3 overshot 1px too far left
+local petManaTextNudged = false
+
+local function NudgePetManaText()
+    if petManaTextNudged then
+        return
+    end
+    local mana = PetFrameManaBar
+    if not mana then
+        return
+    end
+    if mana.RightText and mana.RightText.AdjustPointsOffset then
+        mana.RightText:AdjustPointsOffset(PET_MANA_TEXT_NUDGE_X, 0)
+    end
+    if mana.LeftText and mana.LeftText.AdjustPointsOffset then
+        mana.LeftText:AdjustPointsOffset(PET_MANA_PERCENT_NUDGE_X, 0)
+    end
+    petManaTextNudged = true
+end
+
 -- Name glow -----------------------------------------------------------------------------------------
 -- The reaction colored band behind the name on the target and focus frames (ReputationColor):
 -- optionally hidden, kept off by re-hiding it whenever the client shows it again.
@@ -512,6 +548,7 @@ local function UpdateSoon()
         M:UpdateAll()
         M:AlignManaTexts()
         NudgePlayerManaText()
+        NudgePetManaText()
         M:ApplyNameGlow()
         M:ApplyTotPosition()
     end)
