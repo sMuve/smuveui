@@ -648,6 +648,7 @@ SLASH_SMUVEUI3 = "/smuveui"
 -- /smuve                    options window
 -- /smuve dump               diagnostics into the saved variables (see Debug.lua)
 -- /smuve cleardump          removes them again
+-- /smuve raidlabels         diagnostic: tags party/raid aura icons with their aura group (after a /reload)
 -- /smuve modules            list modules and whether they run
 -- /smuve disable <Module>   / enable <Module>: switch a module off/on (after a /reload)
 -- /smuve chatresync         re-applies the shared chat layout on /reload, even if this
@@ -660,6 +661,12 @@ SlashCmdList.SMUVEUI = function(input)
     elseif command == "cleardump" then
         SmuveUIDebugDB = {}
         S.Print("Diagnostics removed.")
+    elseif command == "raidlabels" then
+        -- Diagnostic only (see Modules\RaidFrames.lua's InitAuraButton): tags every party/raid
+        -- aura icon with the aura group it belongs to.
+        S.db.raidFrames.debugGroupLabels = not S.db.raidFrames.debugGroupLabels or nil
+        S.Print("Raid frame aura group labels " ..
+            (S.db.raidFrames.debugGroupLabels and "ON" or "OFF") .. ". /reload to apply.")
     elseif command == "chatresync" then
         if S.modules.Chat and S.modules.Chat.ResetReceived then
             S.modules.Chat:ResetReceived()

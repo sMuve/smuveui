@@ -228,7 +228,16 @@ end
 -- Aura icon look (shared with nameplates / target & focus auras)
 -- ============================================================================
 
-local function InitAuraButton(auraFrame, size, helpful)
+-- groupTag: which aura group this button belongs to (B/BI = Buffs/BuffsImportant, DB/DN =
+-- DebuffsBig/DebuffsNormal, D1-D3 = the three defensive groups).
+--
+-- Diagnostic for a live report of the same aura showing twice on a member frame, the two icons
+-- overlapping: /smuve dump can't tell which group an icon came from (shown state, position and
+-- aura are all secret on these buttons), so `/smuve raidlabels` + /reload stamps each button with
+-- its group's tag instead. A screenshot of the duplicate then shows whether the two icons are two
+-- GROUPS both matching one aura, or one group drawing it twice. Buttons are styled once, when
+-- the client creates them, hence the reload.
+local function InitAuraButton(auraFrame, size, helpful, groupTag)
     S.modules.Nameplates.InitAuraButton(auraFrame, size, helpful, {
         typeBorders = S.db.appearance.debuffTypeColors,
         purgeGlow = false,
@@ -236,6 +245,13 @@ local function InitAuraButton(auraFrame, size, helpful)
         durationSize = math.max(6, math.floor(size * 0.4)),
         mouse = true,
     })
+    if groupTag and DB().debugGroupLabels then
+        local label = auraFrame:CreateFontString(nil, "OVERLAY", nil, 7)
+        label:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+        label:SetPoint("TOPLEFT", auraFrame, "TOPLEFT", 0, 0)
+        label:SetTextColor(0, 1, 0)
+        label:SetText(groupTag)
+    end
 end
 
 -- ============================================================================
@@ -311,7 +327,7 @@ local function EnsureAuraContainers(frame)
         maxFrameCount = RAID_MAX_BUFFS,
         candidateFilters = state.buffsFilters,
         initializeFrame = function(auraFrame)
-            InitAuraButton(auraFrame, buffSize, true)
+            InitAuraButton(auraFrame, buffSize, true, "B")
         end,
         layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
     })
@@ -319,7 +335,7 @@ local function EnsureAuraContainers(frame)
         maxFrameCount = RAID_MAX_BUFFS,
         candidateFilters = { includeSpellIDs = IMPORTANT_BUFFS, isFriendly = true },
         initializeFrame = function(auraFrame)
-            InitAuraButton(auraFrame, buffSize, true)
+            InitAuraButton(auraFrame, buffSize, true, "BI")
         end,
         layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
     })
@@ -333,7 +349,7 @@ local function EnsureAuraContainers(frame)
         maxFrameCount = RAID_MAX_BIG_DEBUFFS,
         candidateFilters = { isBossOrRoleAura = true, excludeSpellIDs = EXCLUDED_NOISE_AURAS, isFriendly = true },
         initializeFrame = function(auraFrame)
-            InitAuraButton(auraFrame, bossDebuffSize, false)
+            InitAuraButton(auraFrame, bossDebuffSize, false, "DB")
         end,
         layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
     })
@@ -341,7 +357,7 @@ local function EnsureAuraContainers(frame)
         maxFrameCount = RAID_MAX_DEBUFFS,
         candidateFilters = { isBossOrRoleAura = false, excludeSpellIDs = EXCLUDED_NOISE_AURAS, isFriendly = true },
         initializeFrame = function(auraFrame)
-            InitAuraButton(auraFrame, debuffSize, false)
+            InitAuraButton(auraFrame, debuffSize, false, "DN")
         end,
         layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
     })
@@ -356,7 +372,7 @@ local function EnsureAuraContainers(frame)
         maxFrameCount = RAID_MAX_DEFENSIVE,
         candidateFilters = { excludeSpellIDs = CURATED_EXCLUDE, isFriendly = true },
         initializeFrame = function(auraFrame)
-            InitAuraButton(auraFrame, defensiveSize, true)
+            InitAuraButton(auraFrame, defensiveSize, true, "D1")
         end,
         layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
     })
@@ -364,7 +380,7 @@ local function EnsureAuraContainers(frame)
         maxFrameCount = RAID_MAX_DEFENSIVE,
         candidateFilters = { includeSpellIDs = DEFENSIVE_COOLDOWNS, isFriendly = true },
         initializeFrame = function(auraFrame)
-            InitAuraButton(auraFrame, defensiveSize, true)
+            InitAuraButton(auraFrame, defensiveSize, true, "D2")
         end,
         layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
     })
@@ -373,7 +389,7 @@ local function EnsureAuraContainers(frame)
             maxFrameCount = DB().defensiveShowImportant and RAID_MAX_DEFENSIVE or 0,
             candidateFilters = { excludeSpellIDs = CURATED_EXCLUDE, isFriendly = true },
             initializeFrame = function(auraFrame)
-                InitAuraButton(auraFrame, defensiveSize, true)
+                InitAuraButton(auraFrame, defensiveSize, true, "D3")
             end,
             layout = { elementSpacing = ICON_GAP, lineSpacing = ICON_GAP },
         })
@@ -855,6 +871,58 @@ local function ApplyMouseButtonForwardingToAll()
 end
 
 -- ============================================================================
+-- The client's own party/raid frame auras
+-- ============================================================================
+-- The client draws its own buff/debuff icons on these frames (11px, in the same two bottom
+-- corners) unless told not to, and nothing here ever told it - so on a character where they
+-- were on, every aura showed twice: our icon plus the client's small one in the same corner.
+-- Confirmed live: a screenshot with /smuve raidlabels on showed each "duplicate" as one tagged
+-- icon of ours plus a smaller untagged one, /smuve dump read the frame's own displayBuffs=true /
+-- displayDebuffs=true / buffAuraSize=11, and a second character on the same account, where the
+-- client's icons were already off, showed no duplicates at all.
+--
+-- Switched off the way both reference addons for this client do it (muleyoUI's
+-- Theme:DisableDefaultRaidAuras, mini-auras' PartyAuras): through the client's own CVars, never
+-- by touching the protected frames. raidFramesCenterBigDefensive is the client's own centered
+-- big-defensive icon, which our defensive container replaces.
+local NATIVE_AURA_CVARS = { "raidFramesDisplayBuffs", "raidFramesDisplayDebuffs", "raidFramesCenterBigDefensive" }
+local nativeAuraCVarsPending = false
+
+-- Only ever writes on a real change: writing a value the client already holds still makes it
+-- rebuild the raid frames (per mini-auras' own note on these same CVars). Deferred out of combat
+-- for the same reason - a rebuild of protected frames mid-fight is asking for trouble.
+--
+-- nativeAurasTaken remembers that WE switched them off, so turning this module's auras off hands
+-- the client's own icons back - but someone who had already switched those off themselves,
+-- before ever enabling this, keeps them off.
+local function ApplyNativeAuraCVars()
+    if not (GetCVar and SetCVar) then
+        return
+    end
+    if InCombatLockdown() then
+        nativeAuraCVarsPending = true
+        return
+    end
+    nativeAuraCVarsPending = false
+    local db = DB()
+    local wanted
+    if db.enabled then
+        wanted = "0"
+    elseif db.nativeAurasTaken then
+        wanted = "1"
+    else
+        return
+    end
+    for _, cvar in ipairs(NATIVE_AURA_CVARS) do
+        local ok, current = pcall(GetCVar, cvar)
+        if ok and current ~= nil and current ~= wanted then
+            pcall(SetCVar, cvar, wanted)
+        end
+    end
+    db.nativeAurasTaken = db.enabled and true or nil
+end
+
+-- ============================================================================
 -- Debug readback (consumed by Debug.lua's /smuve dump)
 -- ============================================================================
 
@@ -863,11 +931,82 @@ M.debugState = {}
 local function RefreshDebugState()
     local lines = {}
     local count = 0
+    local cvars = {}
+    for _, cvar in ipairs(NATIVE_AURA_CVARS) do
+        local ok, value = pcall(GetCVar, cvar)
+        table.insert(cvars, cvar .. "=" .. tostring(ok and value))
+    end
+    table.insert(lines, "client aura cvars: " .. table.concat(cvars, " | ") ..
+        " | enabled=" .. tostring(DB().enabled) .. " | nativeAurasTaken=" .. tostring(DB().nativeAurasTaken))
     for frame in pairs(trackedFrames) do
         count = count + 1
         local state = frameState[frame]
         local unit = frame.unit or (state and state.buffContainer and state.buffContainer.mUIUnit)
         table.insert(lines, (frame.GetName and frame:GetName() or "?") .. " unit=" .. tostring(unit))
+        -- The client's OWN aura icons on this frame. A live screenshot with /smuve raidlabels on
+        -- showed each "duplicate" as one tagged icon of ours plus a smaller untagged one in the
+        -- same corner, and /smuve dump's frame walk lists no such child - but it silently skips
+        -- forbidden children. So read the client's own bookkeeping instead: the buffFrames/
+        -- debuffFrames-style arrays a compact unit frame keeps in plain Lua fields, plus every
+        -- field whose name mentions an aura at all (in case this client names them differently).
+        local okFields, fieldsError = pcall(function()
+            local visible = frame:IsShown()
+            if S.IsSecret(visible) or not visible then
+                return
+            end
+            local fields = {}
+            for key, value in pairs(frame) do
+                if type(key) == "string" then
+                    local lower = key:lower()
+                    if lower:find("buff") or lower:find("aura") or lower:find("dispel") then
+                        local desc = type(value)
+                        if type(value) == "table" then
+                            local shown, total = 0, 0
+                            for _, item in ipairs(value) do
+                                total = total + 1
+                                local ok, isShown = pcall(function() return item:IsShown() end)
+                                if ok and not S.IsSecret(isShown) and isShown then
+                                    shown = shown + 1
+                                elseif ok and S.IsSecret(isShown) then
+                                    shown = -1
+                                end
+                            end
+                            desc = string.format("table[%d] shown=%s", total, shown == -1 and "<secret>" or tostring(shown))
+                        elseif type(value) ~= "function" and not S.IsSecret(value) then
+                            desc = tostring(value)
+                        end
+                        table.insert(fields, key .. "=" .. desc)
+                    end
+                end
+            end
+            table.sort(fields)
+            table.insert(lines, "  client aura fields: " .. (#fields > 0 and table.concat(fields, " | ") or "none"))
+            local okChildren, children = pcall(function() return { frame:GetChildren() } end)
+            if okChildren then
+                local forbidden = 0
+                for _, child in ipairs(children) do
+                    local okF, isForbidden = pcall(child.IsForbidden, child)
+                    if okF and isForbidden then
+                        forbidden = forbidden + 1
+                    end
+                end
+                table.insert(lines, string.format("  children=%d forbidden=%d", #children, forbidden))
+            end
+            local options = frame.optionTable
+            if type(options) == "table" then
+                local parts = {}
+                for key, value in pairs(options) do
+                    if type(key) == "string" and (key:lower():find("buff") or key:lower():find("aura") or key:lower():find("dispel")) then
+                        table.insert(parts, key .. "=" .. tostring(value))
+                    end
+                end
+                table.sort(parts)
+                table.insert(lines, "  optionTable: " .. (#parts > 0 and table.concat(parts, " | ") or "no aura keys"))
+            end
+        end)
+        if not okFields then
+            table.insert(lines, "  client aura fields: error " .. tostring(fieldsError))
+        end
     end
     M.debugState.trackedCount = count
     M.debugState.frames = lines
@@ -900,6 +1039,9 @@ local function OnCombatStateChanged()
         end
     end
     UpdateRaidBuffExclusions()
+    if nativeAuraCVarsPending then
+        ApplyNativeAuraCVars()
+    end
     if soloVisibilityPending then
         ApplySoloVisibility()
     end
@@ -918,6 +1060,7 @@ function M:Init()
     S:On("PLAYER_REGEN_ENABLED", OnCombatStateChanged)
 
     refreshTicker = refreshTicker or C_Timer.NewTicker(1, TickAllFrames)
+    ApplyNativeAuraCVars()
 
     for frame in pairs(trackedFrames) do
         M:RefreshFrame(frame)
@@ -928,6 +1071,7 @@ function M:Init()
 end
 
 function M:Refresh()
+    ApplyNativeAuraCVars()
     for frame in pairs(trackedFrames) do
         M:RefreshFrame(frame)
         M:ApplyStyling(frame)
