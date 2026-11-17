@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.11.2 - 2026-11-17
+- Fixed buffs and debuffs sometimes showing twice on party and raid frames.
+
 ## 0.11.1 - 2026-11-17
 - The white flash on your own mana or resource bar whenever you spend or gain some is now hidden, for a calmer bar. The preview of what a spell will cost stays. If you liked the flash, untick "Hide resource bar flash" under Options -> Unit Frames.
 
