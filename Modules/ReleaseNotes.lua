@@ -7,6 +7,14 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.11.3", notes = {
+        "Fixed the pet frame's mana/power percent and value text not lining up with the health bar's text.",
+        "Fixed the dark mode tooltip border not darkening for buff/debuff tooltips on the target, party and raid frames.",
+        "Dark mode now also darkens the pet action bar's button border art.",
+        "Moved the target/focus frame's PvP faction icon out from behind the level badge, where it was mostly hidden.",
+        "Fixed debuffs on the target and focus frames showing below buffs instead of above them.",
+        "\"Color debuff borders by type\" is now a separate toggle for the target/focus frames, nameplates and raid frames, each under its own Options page, instead of one combined switch. Nameplates and the target/focus frames default to off.",
+    } },
     { version = "0.11.2", notes = {
         "Fixed buffs and debuffs sometimes showing twice on party and raid frames.",
     } },
