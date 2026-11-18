@@ -148,7 +148,7 @@ local function CreateBlock(parent, helpful, size, perRow, rows, db, purgeGlow, u
     container:SetFlowLayoutMaximumLineSize(LineSize(perRow, size))
 
     local style = {
-        typeBorders = S.db.appearance.debuffTypeColors,
+        typeBorders = S.db.appearance.debuffTypeColorsUnitFrames,
         purgeGlow = purgeGlow,
         showDuration = db.showDuration,
         durationSize = db.durationSize,
@@ -203,7 +203,7 @@ local function PreviewGrid(holder, sample, types, size, perRow, rows)
     grid:SetSize(math.max(1, LineSize(math.min(count, perRow), size)), math.max(1, rows * size + (rows - 1) * SPACING))
     for index = 1, count do
         local which = (index - 1) % #sample + 1
-        local icon = PreviewIcon(grid, size, sample[which], nil, types and types[which])
+        local icon = PreviewIcon(grid, size, sample[which], nil, types and types[which], S.db.appearance.debuffTypeColorsUnitFrames)
         local x = ((index - 1) % perRow) * (size + SPACING)
         local y = math.floor((index - 1) / perRow) * (size + SPACING)
         icon:SetPoint("TOPLEFT", grid, "TOPLEFT", x, -y)

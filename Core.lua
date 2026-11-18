@@ -29,7 +29,9 @@ S.defaults = {
         classColorNames = false, -- player names on the unit frames in class color
         hideNameGlow = true,    -- the reaction colored band behind the target / focus name
         hideResourceFlash = true, -- the white flash on the player's mana/resource bar when the resource is spent or gained
-        debuffTypeColors = true, -- debuff icon borders colored by dispel type (player/target/focus/nameplates/raid)
+        debuffTypeColorsUnitFrames = false, -- debuff icon borders colored by dispel type: target/focus frame auras
+        debuffTypeColorsNameplates = false, -- same, nameplates
+        debuffTypeColorsRaid = true,       -- same, party/raid frames
     },
     qol = {
         fastLoot = true,
@@ -179,7 +181,7 @@ S.defaults = {
 local OBSOLETE = {
     actionbars = { "xpCustomSize", "xpWidth", "xpHeight" },  -- the XP bar is scaled now
     nameplates = { "nameAbove", "buffGap", "debuffMax", "buffMax", "importantSize", "ccSize", "typeBorders" }, -- always on now
-    appearance = { "biggerHealthBar", "playerNameX", "playerNameY", "targetNameX", "targetNameY", "darkMode" }, -- removed
+    appearance = { "biggerHealthBar", "playerNameX", "playerNameY", "targetNameX", "targetNameY", "darkMode", "debuffTypeColors", "debuffTypeColorsPlayer" }, -- removed
 }
 
 local function RemoveObsolete(db)
@@ -586,6 +588,15 @@ S:On("ADDON_LOADED", function(_, loaded)
     -- silently shrinking everyone's cast bar back down to just the raw increase amount.
     if SmuveUIDB.nameplates and SmuveUIDB.nameplates.castBarHeightIncrease ~= nil and SmuveUIDB.nameplates.castBarHeight == nil then
         SmuveUIDB.nameplates.castBarHeight = SmuveUIDB.nameplates.castBarHeightIncrease + 13
+    end
+    -- The single "color debuff borders by type" toggle split into one per module (unit frames/
+    -- nameplates/raid; the player's own aura bar always keeps it, no toggle) so each can be
+    -- turned off independently - a one-time coercion carrying over anyone who had the old
+    -- combined toggle off to the new ones, before RemoveObsolete drops the now-unused old key.
+    if SmuveUIDB.appearance and SmuveUIDB.appearance.debuffTypeColors == false then
+        SmuveUIDB.appearance.debuffTypeColorsUnitFrames = false
+        SmuveUIDB.appearance.debuffTypeColorsNameplates = false
+        SmuveUIDB.appearance.debuffTypeColorsRaid = false
     end
     RemoveObsolete(SmuveUIDB)
     -- The old default ("DEFAULT", the client's own fonts) becomes the new one (Rajdhani Bold)

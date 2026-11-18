@@ -667,6 +667,9 @@ local function AuraSettings(layout, unit, label)
     Slider(layout, "Rows", "How many buff rows there can be.", 1, 6, 1, UA("buffRows"))
 
     Header(layout, "Debuffs (below the buffs)")
+    Checkbox(layout, "Color borders by type",
+        "Debuff icons get a border colored by dispel type (Magic, Curse, Disease, Poison). Off shows the plain black border every icon otherwise has. Shared between the target and focus frames.",
+        Setting("appearance", "debuffTypeColorsUnitFrames", "UnitAuras"))
     Slider(layout, "Icon size", "Size of the debuff icons.", 10, 40, 1, UA("debuffSize"))
     Slider(layout, "Icons per row", "After this many debuffs a new row starts below.", 1, 16, 1, UA("debuffPerRow"))
     Slider(layout, "Rows", "How many debuff rows there can be.", 1, 6, 1, UA("debuffRows"))
@@ -689,11 +692,6 @@ CATEGORIES[10] = { key = "unitframes", title = "Unit Frames", build = function(l
     Checkbox(layout, "Hide resource bar flash",
         "The white flash on your own mana or resource bar whenever you spend or gain some is hidden. The preview of what a spell will cost stays.",
         Setting("appearance", "hideResourceFlash", "UnitFrames"))
-
-    Header(layout, "Debuffs")
-    Checkbox(layout, "Color debuff borders by type",
-        "Debuff icons on the player, target, focus, nameplates and raid frames get a border colored by dispel type (Magic, Curse, Disease, Poison). Off shows the plain black border every icon otherwise has.",
-        Setting("appearance", "debuffTypeColors", { "Nameplates", "UnitAuras", "Auras", "RaidFrames" }))
 
     Header(layout, "Big Debuffs (Experimental, WIP)")
     if not S.modules.BigDebuffs:IsSupported() then
@@ -859,6 +857,9 @@ CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(la
         end)
 
     Header(layout, "Debuffs (above the bar)")
+    Checkbox(layout, "Color borders by type",
+        "Debuff icons get a border colored by dispel type (Magic, Curse, Disease, Poison). Off shows the plain black border every icon otherwise has.",
+        Setting("appearance", "debuffTypeColorsNameplates", "Nameplates"))
     Slider(layout, "Icon size", "Size of the debuff icons.", 12, 40, 1, NP("debuffSize"))
     Slider(layout, "Icons per row", "After this many debuffs a new row starts above.", 1, 12, 1, NP("debuffPerRow"))
     Slider(layout, "Rows", "How many debuff rows there can be.", 1, 4, 1, NP("debuffRows"))
@@ -892,6 +893,9 @@ CATEGORIES[16] = { key = "raidFrames", title = "Raid & Party Frames", build = fu
         Note(layout, "This client doesn't offer the aura containers this needs, so it's inactive.")
     end
     Checkbox(layout, "Enable", "Shows buffs, debuffs and defensive cooldowns on every party/raid member frame. Buffs and debuffs together are one switch, not three.", RF("enabled"))
+    Checkbox(layout, "Color debuff borders by type",
+        "Debuff icons get a border colored by dispel type (Magic, Curse, Disease, Poison). Off shows the plain black border every icon otherwise has.",
+        Setting("appearance", "debuffTypeColorsRaid", "RaidFrames"))
     local getBuffSize, setBuffSize = RF("buffSizePercent")
     Slider(layout, "Buff icon size", "Size of buff icons, as a percent of the member frame's height.", 10, 80, 1, getBuffSize, setBuffSize, "%")
     local getDebuffSize, setDebuffSize = RF("debuffSizePercent")

@@ -295,7 +295,7 @@ end
 -- Without it the nameplate settings apply.
 local function InitButton(button, size, helpful, style)
     style = style or {
-        typeBorders = S.db.appearance.debuffTypeColors,
+        typeBorders = S.db.appearance.debuffTypeColorsNameplates,
         purgeGlow = DB().purgeGlow,
         showDuration = true,
         durationSize = math.max(8, math.floor(size * 0.45)),
@@ -648,7 +648,13 @@ local SAMPLE_TYPES = {
     cc = { "Magic", "None" },
 }
 
-local function PreviewIcon(holder, size, texture, purgeable, dispelType)
+-- typeColorsEnabled: which module's own toggle applies - defaults to the nameplates' one, since
+-- this is this module's own preview icon; callers for another module's preview (e.g. the target/
+-- focus auras' test mode in Modules\UnitAuras.lua) pass their own setting explicitly instead.
+local function PreviewIcon(holder, size, texture, purgeable, dispelType, typeColorsEnabled)
+    if typeColorsEnabled == nil then
+        typeColorsEnabled = S.db.appearance.debuffTypeColorsNameplates
+    end
     local icon = CreateFrame("Frame", nil, holder)
     icon:SetSize(size, size)
     local art = icon:CreateTexture(nil, "ARTWORK")
@@ -656,7 +662,7 @@ local function PreviewIcon(holder, size, texture, purgeable, dispelType)
     art:SetTexture(texture)
     art:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     local edges = AddBlackBorder(icon, icon, BORDER_SIZE)
-    local color = dispelType and S.db.appearance.debuffTypeColors and TYPE_COLORS[dispelType]
+    local color = dispelType and typeColorsEnabled and TYPE_COLORS[dispelType]
     for _, edge in ipairs(edges) do
         if purgeable then
             edge:SetVertexColor(0, 0, 0, 0)

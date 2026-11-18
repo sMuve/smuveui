@@ -257,7 +257,7 @@ local function CreateAuraContainer(anchorTo, isDebuff)
     container:SetFlowLayoutMaximumLineSize(perRow * (ICON_SIZE + SPACING))
 
     local style = {
-        typeBorders = S.db.appearance.debuffTypeColors,
+        typeBorders = true,
         purgeGlow = false,
         showDuration = true,
         durationSize = DB().auraDurationSize,

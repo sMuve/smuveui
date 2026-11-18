@@ -239,7 +239,7 @@ end
 -- the client creates them, hence the reload.
 local function InitAuraButton(auraFrame, size, helpful, groupTag)
     S.modules.Nameplates.InitAuraButton(auraFrame, size, helpful, {
-        typeBorders = S.db.appearance.debuffTypeColors,
+        typeBorders = S.db.appearance.debuffTypeColorsRaid,
         purgeGlow = false,
         showDuration = true,
         durationSize = math.max(6, math.floor(size * 0.4)),
