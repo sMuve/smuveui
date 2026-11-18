@@ -3,20 +3,21 @@ local M = S:NewModule("UnitAuras")
 
 -- Target and focus auras with adjustable icon size, icons per row and rows, and an optional
 -- duration text. Blizzard's aura container on these frames is switched off and replaced by the
--- client's own aura containers (CreateFrame("AuraContainer")), like on the nameplates. Buffs are
--- always the block nearest the frame, debuffs always the outer one - but which SIDE of the frame
--- that whole stack sits on depends on Edit Mode's "Buffs on Top" (see IsBuffsOnTop/UpdateHostility
--- below): off, it hangs below the frame growing down (buffs nearest, debuffs lowest); on, the
--- entire stack mirrors to sit above the frame growing up instead (buffs still nearest, debuffs
--- now the highest), which puts buffs right against the frame and debuffs above them - hence the
--- setting's name. The general technique (mirroring the whole stack's anchor direction, rather
+-- client's own aura containers (CreateFrame("AuraContainer")), like on the nameplates. Debuffs are
+-- always the block nearest the frame, buffs always the outer one - matching the default UI's own
+-- target-frame ordering (debuffs directly under the health/power bars, buffs below that) -
+-- confirmed live via a screenshot comparison: this addon had it backwards (buffs nearest), which
+-- showed as debuffs sitting below buffs instead of above them. Which SIDE of the frame that whole
+-- stack sits on still depends on Edit Mode's "Buffs on Top" (see IsBuffsOnTop/UpdateHostility
+-- below): off, it hangs below the frame growing down (debuffs nearest, buffs lowest); on, the
+-- entire stack mirrors to sit above the frame growing up instead (debuffs still nearest, buffs
+-- now the highest). The general technique (mirroring the whole stack's anchor direction, rather
 -- than just reordering two rows that stay below the frame either way) is ported from muleyoUI's
 -- own ReflowUnitAuraContainer (Modules/Forever/General/Theme/Auras.lua), confirmed live as
--- necessary after a from-scratch reorder-only attempt here had no visible effect - but muleyoUI
--- itself keeps debuffs nearest the frame both ways, which isn't the order wanted here; this
--- addon's own pre-mirroring order was already buffs-nearest, so only the direction mirrors, not
--- which block is nearest. The icons look like the nameplate ones (black border, debuff type
--- colors, purge glow) and show tooltips.
+-- necessary after a from-scratch reorder-only attempt here had no visible effect - and muleyoUI
+-- itself also keeps debuffs nearest the frame both ways, which (unlike what an earlier comment
+-- here claimed) turned out to be the right order after all. The icons look like the nameplate
+-- ones (black border, debuff type colors, purge glow) and show tooltips.
 
 local START_X = 5       -- from the frame art's bottom left corner
 local START_Y = 9
@@ -231,10 +232,10 @@ local function ShowPreview(unit)
         previews[unit] = holder
     end
     local anchorTo = (frame.TargetFrameContainer and frame.TargetFrameContainer.FrameTexture) or frame
-    holder.buffs:ClearAllPoints()
-    holder.buffs:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", START_X, START_Y)
     holder.debuffs:ClearAllPoints()
-    holder.debuffs:SetPoint("TOPLEFT", holder.buffs, "BOTTOMLEFT", 0, -TYPE_GAP)
+    holder.debuffs:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", START_X, START_Y)
+    holder.buffs:ClearAllPoints()
+    holder.buffs:SetPoint("TOPLEFT", holder.debuffs, "BOTTOMLEFT", 0, -TYPE_GAP)
     holder:Show()
 end
 
@@ -318,11 +319,9 @@ function M:UpdateHostility(unit)
     inactive:SetEnabled(false)
     inactive:Hide()
 
-    -- Buffs are always the block nearest the frame, debuffs always the outer one, in both
-    -- directions - confirmed live as the actual expected order (unlike muleyoUI's own
-    -- ReflowUnitAuraContainer, which keeps debuffs nearest the frame both ways instead; this
-    -- addon's own original, pre-mirroring order was already buffs-nearest, so mirroring only
-    -- needs to flip which side of the frame that same order sits on, not swap the two roles).
+    -- Debuffs are always the block nearest the frame, buffs always the outer one, in both
+    -- directions - matches the default UI and muleyoUI's own ReflowUnitAuraContainer, both of
+    -- which keep debuffs nearest the frame regardless of mirroring (see the header comment above).
     local anchorTo = (frame.TargetFrameContainer and frame.TargetFrameContainer.FrameTexture) or frame
     local mirrored = IsBuffsOnTop(unit)
     local point, relativePoint, frameOffsetY, gapOffsetY, growth
@@ -341,15 +340,15 @@ function M:UpdateHostility(unit)
             "TOPLEFT", "BOTTOMLEFT", START_Y, -TYPE_GAP, AnchorUtil.FlowDirection.Down
     end
 
-    active:ClearAllPoints()
-    active:SetPoint(point, anchorTo, relativePoint, START_X, frameOffsetY)
-    active:SetFlowLayoutAnchorPoint(point)
-    active:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, growth)
-
     host.debuffs:ClearAllPoints()
-    host.debuffs:SetPoint(point, active, relativePoint, 0, gapOffsetY)
+    host.debuffs:SetPoint(point, anchorTo, relativePoint, START_X, frameOffsetY)
     host.debuffs:SetFlowLayoutAnchorPoint(point)
     host.debuffs:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, growth)
+
+    active:ClearAllPoints()
+    active:SetPoint(point, host.debuffs, relativePoint, 0, gapOffsetY)
+    active:SetFlowLayoutAnchorPoint(point)
+    active:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, growth)
 
     for _, container in ipairs({ active, host.debuffs }) do
         container:SetUnit(unit)
