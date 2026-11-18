@@ -178,15 +178,17 @@ end
 
 -- Action bars, micro menu, bags, XP/rep bars -----------------------------------------------------
 
--- PetActionButton/StanceButton/BonusActionButton deliberately excluded - same reasoning
--- Modules\ActionBars.lua's own BARS list already uses. S:Darken installs a permanent
--- hooksecurefunc(texture, "SetVertexColor"/"SetDesaturated", ...) on every texture it touches
--- (Core.lua), so darkening these buttons' art means that hook fires every time the client
--- recolors/desaturates them for its own reasons - which for the pet bar specifically happens as
--- part of its own per-button Update(), the same call that can go on to Hide() the bar (no pet) and
--- have Edit Mode reflow MainActionBar under it. Confirmed live as the same ADDON_ACTION_BLOCKED on
--- MainActionBar:SetPointBase() that Modules\ActionBars.lua's and Modules\BarVisibility.lua's own
--- pet-bar hooks were already fixed for - this was the one actually still causing it.
+-- StanceButton/BonusActionButton still deliberately excluded here, same reasoning as PetActionButton
+-- used to be (see DarkenButtonArtPolled below for how Pet's own version of this was fixed): S:Darken
+-- installs a permanent hooksecurefunc(texture, "SetVertexColor"/"SetDesaturated", ...) on every
+-- texture it touches (Core.lua), so darkening these buttons' art means that hook fires every time
+-- the client recolors/desaturates them for its own reasons - which for the pet bar specifically
+-- happened as part of its own per-button Update(), the same call that can go on to Hide() the bar
+-- (no pet) and have Edit Mode reflow MainActionBar under it. Confirmed live as the same
+-- ADDON_ACTION_BLOCKED on MainActionBar:SetPointBase() that Modules\ActionBars.lua's and
+-- Modules\BarVisibility.lua's own pet-bar hooks were already fixed for - this was the one actually
+-- still causing it. Stance/Bonus weren't specifically re-checked when Pet was fixed, so they're
+-- left on the same safe-but-undarkened footing for now.
 local BUTTON_BARS = {
     "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton",
     "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button",
@@ -237,12 +239,44 @@ local function DarkenButtonArt(button, name)
     end
 end
 
+-- Same fields as DarkenButtonArt, but via S:DarkenPolled - for PetActionButton (see PET_ACTION_BUTTON_MAX
+-- below): its own Update()/Hide() call is exactly the kind of Blizzard-owned call chain a permanent
+-- S:Darken hook taints (confirmed live before, same ADDON_ACTION_BLOCKED as MainActionBar's own
+-- vehicle-transition hierarchy above). Cross-checked against muleyoUI's own equivalent (Functions.lua's
+-- mUI:Skin(), called from Theme:Update() - once at theme-apply time, never from inside a Blizzard
+-- update, and with no hook of its own at all): it only gets away without a hook because it never
+-- re-applies after Blizzard resets it either, which would look right once and then drift. Polling
+-- (already used above for MainActionBar) keeps the self-correcting behavior while skipping the hook
+-- that actually caused the taint.
+local function DarkenButtonArtPolled(button, name)
+    if not button then
+        return
+    end
+    if button.GetNormalTexture then
+        S:DarkenPolled(button:GetNormalTexture())
+    end
+    S:DarkenPolled(button.NormalTexture)
+    S:DarkenPolled(button.Background)
+    S:DarkenPolled(button.PushedBackground)
+    S:DarkenPolled(button.RightDivider)
+    if name then
+        S:DarkenPolled(_G[name .. "NormalTexture"])
+    end
+end
+
+local PET_ACTION_BUTTON_MAX = 10
+
 local function DarkenActionBars()
     for _, prefix in ipairs(BUTTON_BARS) do
         for i = 1, 12 do
             local name = prefix .. i
             DarkenButtonArt(_G[name], name)
         end
+    end
+
+    for i = 1, PET_ACTION_BUTTON_MAX do
+        local name = "PetActionButton" .. i
+        DarkenButtonArtPolled(_G[name], name)
     end
 
     -- MainActionBar itself (its edges, every child via GetChildren, end caps) and the classic-
