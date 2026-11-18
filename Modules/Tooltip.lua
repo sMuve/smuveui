@@ -9,7 +9,10 @@ local TOOLTIPS = {
     "ItemRefShoppingTooltip2", "EmbeddedItemTooltip", "WorldMapTooltip", "FriendsTooltip",
 }
 
-local BORDER_OFFSET = 0.15 -- the border stays a little lighter than the background
+-- A direct NineSlice:SetBorderColor() RGB value (see DarkenBorder below) - 0.25 matches what the
+-- old per-texture S:Darken loop this replaced actually produced and had already been confirmed to
+-- look right.
+local BORDER_COLOR = 0.25
 
 local function DarkEnabled()
     return S.db.tooltip.dark
@@ -37,29 +40,108 @@ local function RestoreBackground(tooltip)
     end
 end
 
-function M:StyleTooltips()
-    for _, name in ipairs(TOOLTIPS) do
-        local tooltip = _G[name]
-        if tooltip and tooltip.NineSlice and not tooltip:IsForbidden() then
-            for key, region in pairs(tooltip.NineSlice) do
-                if key ~= "Center" and type(region) == "table" and region.IsObjectType and region:IsObjectType("Texture") then
-                    S:Darken(region, BORDER_OFFSET, DarkEnabled)
-                end
-            end
-            if not self.hooked then
-                tooltip:HookScript("OnShow", DarkenBackground)
-            end
-            if DarkEnabled() then
-                DarkenBackground(tooltip)
-            else
-                RestoreBackground(tooltip)
+-- NineSlice:SetBorderColor(r,g,b,a) - the blessed API (confirmed against muleyoUI's own tooltip
+-- skin, Modules/Forever/Tooltips/Style.lua, same client), not per-texture SetVertexColor tinting.
+-- NineSlicePanelMixin remembers whatever color this last set and re-applies it itself whenever it
+-- redoes its own layout (e.g. SharedTooltip_SetBackdropStyle) - canonical, Blizzard-tracked state,
+-- unlike recoloring the raw child textures directly, which Blizzard's own layout-reapply code has
+-- no knowledge of and will happily overwrite.
+local function DarkenBorder(tooltip)
+    local nineSlice = tooltip.NineSlice
+    if not nineSlice or tooltip:IsForbidden() then
+        return
+    end
+    if nineSlice.SetBorderColor then
+        nineSlice:SetBorderColor(BORDER_COLOR, BORDER_COLOR, BORDER_COLOR, 1)
+    else
+        -- Fallback for a tooltip whose NineSlice doesn't expose the blessed API for some reason -
+        -- the old per-texture tint, better than nothing even though it can't self-heal the same way.
+        for key, region in pairs(nineSlice) do
+            if key ~= "Center" and type(region) == "table" and region.IsObjectType and region:IsObjectType("Texture") then
+                S:Darken(region, 0.15, DarkEnabled)
             end
         end
     end
-    if not self.hooked and SharedTooltip_SetBackdropStyle then
-        hooksecurefunc("SharedTooltip_SetBackdropStyle", DarkenBackground)
+end
+
+local function RestoreBorder(tooltip)
+    local nineSlice = tooltip.NineSlice
+    if nineSlice and nineSlice.SetBorderColor then
+        nineSlice:SetBorderColor(1, 1, 1, 1)
     end
-    self.hooked = true
+end
+
+-- A unit frame's own aura tooltip (hovering a buff/debuff icon on the target, party or raid
+-- frame) does NOT go through GameTooltip on this client at all - it's a separate Blizzard
+-- subsystem, AuraContainerInbound, with its own backdrop entirely (confirmed against muleyoUI's
+-- Forever-client theme, Modules/Forever/General/Theme/Tooltips.lua, StyleAuraTooltip()): its own
+-- SetTooltipBackdrop() API, a plain old-style backdrop table (edgeFile/bgFile), not NineSlice/atlas
+-- pieces - a different rendering path, not a cosmetic variant of DarkenBorder above.
+local AURA_TOOLTIP_BACKDROP = {
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = false,
+    tileEdge = false,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+
+local function StyleAuraTooltip()
+    if not (AuraContainerInbound and AuraContainerInbound.SetTooltipBackdrop) then
+        return
+    end
+    if DarkEnabled() then
+        AuraContainerInbound.SetTooltipBackdrop({
+            backdropInfo = AURA_TOOLTIP_BACKDROP,
+            centerColor = CreateColor(0, 0, 0, 0.9),
+            borderColor = CreateColor(BORDER_COLOR, BORDER_COLOR, BORDER_COLOR, 1),
+        })
+    else
+        AuraContainerInbound.SetTooltipBackdrop({
+            backdropInfo = AURA_TOOLTIP_BACKDROP,
+            centerColor = CreateColor(1, 1, 1, 1),
+            borderColor = CreateColor(1, 1, 1, 1),
+        })
+    end
+end
+
+-- tooltip -> true once its own OnShow hook is installed.
+local handled = setmetatable({}, { __mode = "k" })
+
+local function SetupTooltip(tooltip)
+    if not tooltip or tooltip:IsForbidden() or not tooltip.NineSlice then
+        return
+    end
+    if not handled[tooltip] then
+        handled[tooltip] = true
+        -- Still needed for the background: unlike SetBorderColor (see DarkenBorder above),
+        -- SetCenterColor isn't bookkept/reapplied by Blizzard on its own relayouts, so this has to
+        -- keep reasserting itself on every reshow.
+        tooltip:HookScript("OnShow", DarkenBackground)
+    end
+    if DarkEnabled() then
+        DarkenBorder(tooltip)
+        DarkenBackground(tooltip)
+    else
+        RestoreBorder(tooltip)
+        RestoreBackground(tooltip)
+    end
+end
+
+function M:StyleTooltips()
+    for _, name in ipairs(TOOLTIPS) do
+        SetupTooltip(_G[name])
+    end
+    StyleAuraTooltip()
+    if not self.backdropHooked and SharedTooltip_SetBackdropStyle then
+        -- Only the background still needs this - DarkenBorder/SetBorderColor no longer does (see
+        -- its own comment above): Blizzard reapplies that color itself on every relayout now.
+        -- SetCenterColor isn't bookkept the same way, so this still re-asserts it after whatever
+        -- content-driven relayout SharedTooltip_SetBackdropStyle is part of.
+        hooksecurefunc("SharedTooltip_SetBackdropStyle", DarkenBackground)
+        self.backdropHooked = true
+    end
 end
 
 -- Class colored names ------------------------------------------------------------------------------
