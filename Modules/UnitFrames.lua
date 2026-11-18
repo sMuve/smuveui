@@ -513,6 +513,56 @@ function M:ApplyTotPosition()
     totPositioning = false
 end
 
+-- PvP icon position -------------------------------------------------------------------------------
+-- The target/focus frame's own PvP faction icon sits mostly behind the level badge circle by
+-- default on this client - confirmed via /smuve dump: PvpBackgroundIcon (24x27,
+-- TOP>TargetFrameContentContextual:TOPRIGHT(-24,-65)) and LevelBackgroundCircle (39x39,
+-- BOTTOMRIGHT>TargetFrameContentMain:BOTTOMRIGHT(-13,7)) sit in the exact same 232x100 content
+-- area (both anchor TOPLEFT/BOTTOMRIGHT(0,0) to it) and their bounding boxes overlap by a wide
+-- margin (X 196-220 vs 180-219, Y 8-35 vs 7-46) - matching what's visible live, the icon mostly
+-- hidden behind the badge with just a corner poking out. Moved up into the clear space above the
+-- badge instead - where a PvP icon sits by default everywhere else (e.g. the player frame's own
+-- PvpBackgroundIcon anchors near the top of its content area, not the bottom), so this reads as a
+-- layout bug on this client rather than an intentional overlap. Same capture-once-and-reapply-on-
+-- SetPoint technique as ApplyTotPosition above, for the same reason (a Blizzard-owned region).
+
+local PVP_ICON_OFFSET_X, PVP_ICON_OFFSET_Y = -15, 45 -- confirmed live: 40 was still a few px too low; -15 shifts it left
+local pvpIconOriginal = setmetatable({}, { __mode = "k" }) -- icon -> original anchor
+local pvpIconPositioning = setmetatable({}, { __mode = "k" }) -- icon -> true while we're the ones moving it
+
+local function ApplyPvpIconPositionFor(icon)
+    if not icon then
+        return
+    end
+    if not pvpIconOriginal[icon] then
+        if icon:GetNumPoints() == 0 then
+            return
+        end
+        local point, relativeTo, relativePoint, x, y = icon:GetPoint(1)
+        if S.IsSecret(point) or S.IsSecret(relativePoint) or S.IsSecret(x) or S.IsSecret(y) then
+            return
+        end
+        pvpIconOriginal[icon] = { point = point, relativeTo = relativeTo, relativePoint = relativePoint, x = x, y = y }
+        hooksecurefunc(icon, "SetPoint", function()
+            if not pvpIconPositioning[icon] then
+                ApplyPvpIconPositionFor(icon)
+            end
+        end)
+    end
+    local original = pvpIconOriginal[icon]
+    pvpIconPositioning[icon] = true
+    icon:ClearAllPoints()
+    icon:SetPoint(original.point, original.relativeTo, original.relativePoint,
+        original.x + PVP_ICON_OFFSET_X, original.y + PVP_ICON_OFFSET_Y)
+    pvpIconPositioning[icon] = false
+end
+
+function M:ApplyPvpIconPosition()
+    for _, frameName in ipairs({ "TargetFrame", "FocusFrame" }) do
+        ApplyPvpIconPositionFor(S.Resolve(frameName .. ".TargetFrameContent.TargetFrameContentContextual.PvpBackgroundIcon"))
+    end
+end
+
 -- Class colored names ----------------------------------------------------------------------------
 -- Player names on the player, target, focus and target-of-target frames in their class color;
 -- other units keep the client's yellow.
@@ -551,6 +601,7 @@ local function UpdateSoon()
         NudgePetManaText()
         M:ApplyNameGlow()
         M:ApplyTotPosition()
+        M:ApplyPvpIconPosition()
     end)
 end
 
@@ -594,6 +645,7 @@ function M:Init()
     self:ApplyNameGlow()
     self:ApplyResourceFlash()
     self:ApplyTotPosition()
+    self:ApplyPvpIconPosition()
     S:On("PLAYER_ENTERING_WORLD", function() M:ApplyResourceFlash() end)
     S:On("UNIT_NAME_UPDATE", UpdateSoon)
 
