@@ -2,6 +2,10 @@
 
 All notable changes to this addon are documented here.
 
+## 0.11.4 - 2026-11-19
+- Fixed the pet's scrolling combat text floating well to the right of its portrait instead of centered on it.
+- Moved the player frame's PvP faction icon out from behind the level badge, where it was mostly hidden - matching the earlier fix for the target and focus frames.
+
 ## 0.11.3 - 2026-11-18
 - Fixed the pet frame's mana/power percent and value text not lining up with the health bar's text.
 - Fixed the dark mode tooltip border not darkening for buff/debuff tooltips on the target, party and raid frames.

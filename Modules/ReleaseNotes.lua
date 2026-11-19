@@ -7,6 +7,10 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.11.4", notes = {
+        "Fixed the pet's scrolling combat text floating well to the right of its portrait instead of centered on it.",
+        "Moved the player frame's PvP faction icon out from behind the level badge, where it was mostly hidden - matching the earlier fix for the target and focus frames.",
+    } },
     { version = "0.11.3", notes = {
         "Fixed the pet frame's mana/power percent and value text not lining up with the health bar's text.",
         "Fixed the dark mode tooltip border not darkening for buff/debuff tooltips on the target, party and raid frames.",
