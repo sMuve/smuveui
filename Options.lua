@@ -1212,16 +1212,40 @@ local function CreateOptionsFrame()
     end
 end
 
+local openAfterCombat = false
+
 function S:ToggleOptions()
-    if InCombatLockdown() and not frame then
+    -- Closing an already-open panel is always fine in combat - only OPENING (creating it fresh, or
+    -- showing it again) needs to wait. The "not frame" version of this check used to let that
+    -- combat guard apply only the very first time ever: once frame existed from an earlier open,
+    -- every later combat toggle skipped it entirely and showed the panel immediately - confirmed
+    -- live as a real bug (deferred-open fix above started working, then opening it again later
+    -- while still in combat opened it right away instead of deferring again).
+    if frame and frame:IsShown() then
+        frame:Hide()
+        return
+    end
+    if InCombatLockdown() then
         S.Print("Options open after combat.")
+        openAfterCombat = true
         return
     end
     if not frame then
         CreateOptionsFrame()
     end
-    frame:SetShown(not frame:IsShown())
+    frame:Show()
 end
+
+S:On("PLAYER_REGEN_ENABLED", function()
+    if not openAfterCombat then
+        return
+    end
+    openAfterCombat = false
+    if not frame then
+        CreateOptionsFrame()
+    end
+    frame:Show()
+end)
 
 -- Entry in the client's Options > AddOns list ------------------------------------------------------
 
