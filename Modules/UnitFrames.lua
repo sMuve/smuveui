@@ -418,6 +418,47 @@ local function NudgePetManaText()
     petManaTextNudged = true
 end
 
+-- Pet combat feedback text ---------------------------------------------------------------------
+-- The scrolling combat text over the pet's portrait (Blizzard's own PetHitIndicator FontString)
+-- sits off-center - confirmed via /smuve dump (debug.petFrame): it's anchored into an unnamed
+-- overlay frame the exact same size as the whole 120x49 PetFrame, not the 37x37 PetPortrait,
+-- which only occupies the left ~42px of that width (TOPLEFT>PetFrame:TOPLEFT(5,-5)). Its own
+-- anchor point/relativePoint come back secret (combat-log-tainted, like the rest of its data),
+-- but which frame it's relative to isn't - and that frame plainly isn't the portrait. Centering on
+-- the whole frame instead of just the portrait circle is what visibly reads as "off-center on the
+-- portrait": the numbers float roughly over the health/mana bars, well right of the portrait.
+-- Re-anchored straight onto PetPortrait instead, with a SetPoint watchdog (same technique as the
+-- target/focus cast bar in Modules\UnitAuras.lua) since Blizzard's own combat feedback code
+-- re-asserts its native anchor on every hit - a one-shot SetPoint here doesn't stick either.
+local petHitIndicatorHooked = false
+local petHitIndicatorReanchoring = false
+
+local function ReanchorPetHitIndicator()
+    local indicator = PetHitIndicator
+    if not indicator or not PetPortrait then
+        return
+    end
+    petHitIndicatorReanchoring = true
+    indicator:ClearAllPoints()
+    indicator:SetPoint("CENTER", PetPortrait, "CENTER", 0, 0)
+    petHitIndicatorReanchoring = false
+end
+
+function M:ApplyPetHitIndicatorPosition()
+    if not PetHitIndicator then
+        return
+    end
+    if not petHitIndicatorHooked then
+        petHitIndicatorHooked = true
+        hooksecurefunc(PetHitIndicator, "SetPoint", function()
+            if not petHitIndicatorReanchoring then
+                ReanchorPetHitIndicator()
+            end
+        end)
+    end
+    ReanchorPetHitIndicator()
+end
+
 -- Name glow -----------------------------------------------------------------------------------------
 -- The reaction colored band behind the name on the target and focus frames (ReputationColor):
 -- optionally hidden, kept off by re-hiding it whenever the client shows it again.
@@ -602,6 +643,7 @@ local function UpdateSoon()
         M:ApplyNameGlow()
         M:ApplyTotPosition()
         M:ApplyPvpIconPosition()
+        M:ApplyPetHitIndicatorPosition()
     end)
 end
 
@@ -646,6 +688,7 @@ function M:Init()
     self:ApplyResourceFlash()
     self:ApplyTotPosition()
     self:ApplyPvpIconPosition()
+    self:ApplyPetHitIndicatorPosition()
     S:On("PLAYER_ENTERING_WORLD", function() M:ApplyResourceFlash() end)
     S:On("UNIT_NAME_UPDATE", UpdateSoon)
 

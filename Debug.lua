@@ -244,6 +244,10 @@ function S:Dump()
     Walk(TargetFrame, 0, 6, debug.targetFrame)
     debug.focusFrame = {}
     Walk(FocusFrame, 0, 6, debug.focusFrame)
+    -- Scrolling combat text over the pet portrait (reported off-center) - deal or take damage as
+    -- the pet right before dumping, so its combat feedback text region is actually populated.
+    debug.petFrame = {}
+    Walk(PetFrame, 0, 6, debug.petFrame)
 
     -- Target/focus cast bar repositioning (cast a spell with buffs/debuffs showing first, on
     -- both the target and yourself if possible, to tell the two frames' behavior apart).
