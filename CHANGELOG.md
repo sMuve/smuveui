@@ -2,6 +2,11 @@
 
 All notable changes to this addon are documented here.
 
+## 0.11.5 - 2026-11-20
+- Fixed the Options panel not actually opening once combat ended, even though it said it would.
+- Fixed the Options panel sometimes opening immediately during combat instead of waiting, if it had already been opened at least once before.
+- Fixed an error that could appear when changing a setting after fighting something with debuffs visible on its nameplate.
+
 ## 0.11.4 - 2026-11-19
 - Fixed the pet's scrolling combat text floating well to the right of its portrait instead of centered on it.
 - Moved the player frame's PvP faction icon out from behind the level badge, where it was mostly hidden - matching the earlier fix for the target and focus frames.
