@@ -562,14 +562,24 @@ end
 -- area (both anchor TOPLEFT/BOTTOMRIGHT(0,0) to it) and their bounding boxes overlap by a wide
 -- margin (X 196-220 vs 180-219, Y 8-35 vs 7-46) - matching what's visible live, the icon mostly
 -- hidden behind the badge with just a corner poking out. Moved up into the clear space above the
--- badge instead - where a PvP icon sits by default everywhere else (e.g. the player frame's own
--- PvpBackgroundIcon anchors near the top of its content area, not the bottom), so this reads as a
--- layout bug on this client rather than an intentional overlap. Same capture-once-and-reapply-on-
--- SetPoint technique as ApplyTotPosition above, for the same reason (a Blizzard-owned region).
+-- badge instead - where a PvP icon sits by default everywhere else - so this reads as a layout bug
+-- on this client rather than an intentional overlap. Same capture-once-and-reapply-on-SetPoint
+-- technique as ApplyTotPosition above, for the same reason (a Blizzard-owned region).
+--
+-- The player frame's own PvpBackgroundIcon (confirmed via /smuve dump: TOP>PlayerFrameContentMain
+-- :TOPLEFT(22,-65), 24x27) turns out to have the identical bug, overlapping the player's own
+-- LevelBackgroundCircle (BOTTOMLEFT>PlayerFrameContentMain:BOTTOMLEFT(13,7), 39x39) almost
+-- entirely - PlayerFrameContentMain is the exact mirror of TargetFrameContentMain (left-anchored
+-- instead of right-anchored), so it gets the mirrored offset below instead of the same numbers.
+-- PlayerPVPTimerText (the PvP flag countdown) is anchored RIGHT>PvpBackgroundIcon:LEFT(2,0) - to
+-- the icon itself, not independently - so moving the icon already carries it along; nothing extra
+-- needed for it.
 
 local PVP_ICON_OFFSET_X, PVP_ICON_OFFSET_Y = -15, 45 -- confirmed live: 40 was still a few px too low; -15 shifts it left
+local PLAYER_PVP_ICON_OFFSET_X, PLAYER_PVP_ICON_OFFSET_Y = 17, 45 -- mirror of the above: same up-shift, opposite (mirrored) left/right shift
 local pvpIconOriginal = setmetatable({}, { __mode = "k" }) -- icon -> original anchor
 local pvpIconPositioning = setmetatable({}, { __mode = "k" }) -- icon -> true while we're the ones moving it
+local pvpIconOffset = setmetatable({}, { __mode = "k" }) -- icon -> { x, y } offset to apply
 
 local function ApplyPvpIconPositionFor(icon)
     if not icon then
@@ -591,16 +601,26 @@ local function ApplyPvpIconPositionFor(icon)
         end)
     end
     local original = pvpIconOriginal[icon]
+    local offset = pvpIconOffset[icon]
     pvpIconPositioning[icon] = true
     icon:ClearAllPoints()
     icon:SetPoint(original.point, original.relativeTo, original.relativePoint,
-        original.x + PVP_ICON_OFFSET_X, original.y + PVP_ICON_OFFSET_Y)
+        original.x + offset.x, original.y + offset.y)
     pvpIconPositioning[icon] = false
 end
 
 function M:ApplyPvpIconPosition()
     for _, frameName in ipairs({ "TargetFrame", "FocusFrame" }) do
-        ApplyPvpIconPositionFor(S.Resolve(frameName .. ".TargetFrameContent.TargetFrameContentContextual.PvpBackgroundIcon"))
+        local icon = S.Resolve(frameName .. ".TargetFrameContent.TargetFrameContentContextual.PvpBackgroundIcon")
+        if icon then
+            pvpIconOffset[icon] = { x = PVP_ICON_OFFSET_X, y = PVP_ICON_OFFSET_Y }
+            ApplyPvpIconPositionFor(icon)
+        end
+    end
+    local playerIcon = S.Resolve("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.PvpBackgroundIcon")
+    if playerIcon then
+        pvpIconOffset[playerIcon] = { x = PLAYER_PVP_ICON_OFFSET_X, y = PLAYER_PVP_ICON_OFFSET_Y }
+        ApplyPvpIconPositionFor(playerIcon)
     end
 end
 
