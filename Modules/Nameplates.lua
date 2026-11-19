@@ -321,6 +321,14 @@ local function InitButton(button, size, helpful, style)
     overlay:SetAllPoints(button)
     overlay:SetFrameLevel(cooldown:GetFrameLevel() + 1)
     -- Every icon has a black border; debuffs take their type's color, purgeable buffs the glow.
+    -- Deliberately NOT run through S:Darken, even just for the plain black case: confirmed live
+    -- (23x "Attempt to access forbidden object", Core.lua Paint via DarkMode:Refresh off a plain
+    -- options slider move) that these buttons belong to the client's own secure AuraContainer/
+    -- CustomAuraButtonTemplate hierarchy and can turn forbidden mid-session (combat taint) well
+    -- after S:Darken's own IsForbidden() check at tracking time already passed - Paint() never
+    -- re-checks it on later repaints, so this blew up the next time ANY setting triggered
+    -- S:RepaintAll(). Same class of problem as MainActionBar/PetActionButton elsewhere in
+    -- Modules\DarkMode.lua, just surfacing as a hard error instead of silent taint.
     local edges = AddBlackBorder(overlay, button, BORDER_SIZE)
     local purgeGlow = helpful and style.purgeGlow and next(purgeAssets) ~= nil
     if not helpful and style.typeBorders then

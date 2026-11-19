@@ -345,6 +345,14 @@ local function Paint(texture)
     if offset == nil then
         return
     end
+    -- A texture can turn forbidden well after S:Darken's own IsForbidden() check at tracking time
+    -- already passed (confirmed live: a nameplate aura icon border, untainted when first tracked,
+    -- went forbidden mid-session from combat taint) - Paint runs again on every S:RepaintAll/
+    -- RepaintPolled call, not just the first one, so it needs this check too or it throws the next
+    -- time anything triggers a repaint.
+    if texture:IsForbidden() then
+        return
+    end
     painting = true
     local condition = conditions[texture]
     local original = originals[texture]
