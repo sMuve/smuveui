@@ -7,10 +7,15 @@ local M = S:NewModule("Chat")
 -- 2. URLs in chat become links; clicking one opens a box to copy it from.
 -- Both are skipped while Chattynator is loaded, since it replaces the chat frames and already does both.
 --
--- The layout is applied through the client's stored chat window settings (SetChatWindow*), never
--- through the chat frame functions: frame code run by an addon is tainted, and tainted chat code
--- breaks on protected chat messages in instances. The client builds its windows from those stored
--- settings itself, so after they change a reload shows them.
+-- A window's settings (name, color, size, messages, channels, position, docked/shown) are written
+-- through the client's stored chat window settings (SetChatWindow*) - never through the chat frame
+-- functions for that part, since frame code run by an addon is tainted, and tainted chat code
+-- breaks on protected chat messages in instances. Confirmed via muleyoUI's source (Modules\Forever
+-- \Chat\Profile.lua, same client) that these take effect live - no reload needed, despite this
+-- addon assuming one was required for a long time (and nagging for it every login, see git log).
+-- Creating or closing a window itself has no stored-settings equivalent though, so that part does
+-- go through frame functions (FCF_OpenNewWindow, FCF_Close, FCF_DockUpdate, ...) - also confirmed
+-- safe this way via the same mUI source.
 
 local function MaxWindows()
     return (Constants and Constants.ChatFrameConstants and Constants.ChatFrameConstants.MaxChatWindows)
@@ -46,12 +51,20 @@ end
 
 -- Layout capture ----------------------------------------------------------------------------------
 
+-- GetChatWindowInfo(id) returns a name for every one of the 10 window slots, active or not - they
+-- all have a persistent name/config from account creation, only some are ever actually opened as a
+-- visible tab. FCF_IsChatWindowIndexActive(id) is the client's own check for that (used the same
+-- way by mUI's Capture(), Modules/Forever/Chat/Profile.lua, same client). Using GetChatWindowInfo's
+-- name as the existence check here - and in CloseExtraWindows/CreateMissingWindows below - meant
+-- every slot beyond General/Combat Log looked "already there" even when it had never been opened:
+-- confirmed live as the reason a brand new character, or any character receiving a window it never
+-- had, stayed stuck on 2 tabs no matter the delay before this ran.
 local function CaptureLayout()
     local layout = { version = 2, windows = {}, colors = {} }
 
     for id = 1, MaxWindows() do
         local name, fontSize, r, g, b, alpha, shown, locked, docked, uninteractable = GetChatWindowInfo(id)
-        if name then
+        if name and (not FCF_IsChatWindowIndexActive or FCF_IsChatWindowIndexActive(id)) then
             local window = {
                 name = name,
                 fontSize = fontSize,
@@ -87,14 +100,41 @@ end
 
 -- Layout apply ------------------------------------------------------------------------------------
 
--- Creates every window the shared layout has beyond the ones this character already has.
--- FCF_OpenNewWindow is the client's own window-creation function (used by its own chat menu's
--- "New Window"). Confirmed via mUI's source (Modules/Forever/Chat/Profile.lua, same client) that
--- calling it repeatedly in a plain, synchronous loop works - mUI also closes every existing extra
--- window first, but that turned out not to be needed here: confirmed live on a genuinely fresh
--- character (once CharacterKey's name-collision bug below was fixed) that this plain version
--- creates every missing window correctly on its own.
--- Returns true if it created at least one window (the reload prompt below needs to know).
+-- Closes every window beyond General (id 1) and the Combat Log (id 2), so CreateMissingWindows
+-- below can rebuild the optional ones fresh from the shared layout. A surgical version - close only
+-- the ones missing from the layout, leave the rest open - was tried first and broke both directions
+-- (confirmed live: after it shipped, neither sharing a new window nor closing one reached other
+-- characters anymore). The cause: closing a window makes WoW renumber every window above it down by
+-- one to fill the gap, so a loop that closes by id while later iterations still read higher ids is
+-- working from numbers that shifted out from under it mid-loop. Closing unconditionally from the
+-- highest id down avoids that - nothing above an already-closed window is left to shift - and
+-- matches mUI's own structure (Modules/Forever/Chat/Profile.lua, same client): "Windows of this
+-- character that are not part of the setup" closes all of them first, then ApplyUserWindow recreates
+-- every one of the setup's windows fresh. FCF_Close is a frame function, but so is
+-- FCF_OpenNewWindow just below, already confirmed safe to call this way.
+-- Returns true if it closed at least one window (the confirmation message below needs to know).
+local function CloseExtraWindows()
+    if not (FCF_Close and FCF_GetChatFrameByID) then
+        return false
+    end
+    local closedAny = false
+    for id = MaxWindows(), 3, -1 do
+        if FCF_IsChatWindowIndexActive and FCF_IsChatWindowIndexActive(id) then
+            local frame = FCF_GetChatFrameByID(id)
+            if frame then
+                FCF_Close(frame)
+                closedAny = true
+            end
+        end
+    end
+    return closedAny
+end
+
+-- Creates every window the shared layout has beyond the ones this character already has, after
+-- CloseExtraWindows above has cleared the optional ones out. FCF_OpenNewWindow is the client's own
+-- window-creation function (used by its own chat menu's "New Window"). Confirmed via mUI's source
+-- (same file as above) that calling it repeatedly in a plain, synchronous loop works.
+-- Returns true if it created at least one window (the confirmation message below needs to know).
 local function CreateMissingWindows(layout)
     if not FCF_OpenNewWindow then
         return false
@@ -102,7 +142,8 @@ local function CreateMissingWindows(layout)
     local createdAny = false
     for id = 1, MaxWindows() do
         local window = layout.windows and layout.windows[id]
-        if window and window.name and window.name ~= "" and not GetChatWindowInfo(id) then
+        local alreadyActive = FCF_IsChatWindowIndexActive and FCF_IsChatWindowIndexActive(id)
+        if window and window.name and window.name ~= "" and not alreadyActive then
             FCF_OpenNewWindow(window.name, true)
             createdAny = true
         end
@@ -209,8 +250,8 @@ end
 
 -- Version tracking -------------------------------------------------------------------------------
 -- A layout only becomes the new shared one when its content really changed, and every character
--- remembers which version it already received, so a layout is applied (and the reload offered)
--- once per character and version.
+-- remembers which version it already received, so a layout is applied once per character and
+-- version.
 
 -- Stable text form of a layout: sorted keys, rounded numbers.
 local function Serialize(value)
@@ -257,7 +298,7 @@ end
 -- which silently stops every other character from ever retrying, even one that only partially
 -- received it. An explicit press should always re-push, regardless of whether anything changed;
 -- the check stays for the automatic logout capture, so an untouched session doesn't spam a new
--- stamp (and therefore a reload prompt) on every character purely from logging in and back out.
+-- stamp (and therefore a pointless re-apply) on every character purely from logging in and back out.
 local function Store(layout, force)
     local current = S.db.chatLayout
     if not force and current and current.version == layout.version and Serialize(current) == Serialize(layout) then
@@ -267,19 +308,6 @@ local function Store(layout, force)
     S.db.chatLayout = layout
     MarkReceived(layout.stamp)
 end
-
-StaticPopupDialogs["SMUVEUI_CHAT_RELOAD"] = {
-    text = "SmuveUI set up your shared chat tabs for this character.\nReload the interface to show them?",
-    button1 = RELOADUI or "Reload",
-    button2 = LATER or "Later",
-    OnAccept = function()
-        ReloadUI()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
 
 -- URLs --------------------------------------------------------------------------------------------
 
@@ -471,7 +499,7 @@ local function SetUpHistory()
     end
     for id = 1, MaxWindows() do
         local chatFrame = _G["ChatFrame" .. id]
-        if chatFrame and id ~= COMBAT_LOG_WINDOW and GetChatWindowInfo(id) then
+        if chatFrame and id ~= COMBAT_LOG_WINDOW and (not FCF_IsChatWindowIndexActive or FCF_IsChatWindowIndexActive(id)) then
             HookHistory(chatFrame)
             if not historyReplayed[chatFrame] then
                 historyReplayed[chatFrame] = true
@@ -570,16 +598,27 @@ function M:Init()
             return
         end
         self.started = true
-        C_Timer.After(1, function()
+        -- mUI waits the same 3 seconds here (its own SYNC_DELAY, same file as above) with the
+        -- comment "Chat gets set up by the game for a moment after the login" - kept at that same
+        -- value on principle, though the login-only "stuck on 2 tabs" bug this was first raised to
+        -- fix turned out to be CreateMissingWindows/CloseExtraWindows below using the wrong
+        -- existence check instead, not timing.
+        C_Timer.After(3, function()
             local layout = S.db.chatLayout
             if layout and not layout.stamp then
                 layout.stamp = "initial" -- stored before versions existed
             end
             local received = S.db.chatReceived and S.db.chatReceived[CharacterKey()]
             if S.db.qol.chatSync and layout and layout.version == 2 and layout.stamp and layout.stamp ~= received then
-                -- Window creation happens first (see CreateMissingWindows) and finishes
-                -- synchronously, so every window ApplyLayout is meant to configure already
-                -- exists by the time it starts - ApplyLayout itself never creates anything.
+                -- Closing and creation happen first (see CloseExtraWindows/CreateMissingWindows)
+                -- and finish synchronously, so every window ApplyLayout is meant to configure
+                -- already exists by the time it starts - ApplyLayout itself never opens or closes
+                -- anything.
+                local okClose, closedAny = pcall(CloseExtraWindows)
+                if not okClose then
+                    geterrorhandler()(closedAny)
+                    closedAny = false
+                end
                 local okCreate, createdAny = pcall(CreateMissingWindows, layout)
                 if not okCreate then
                     geterrorhandler()(createdAny)
@@ -590,9 +629,21 @@ function M:Init()
                     geterrorhandler()(changed)
                 else
                     MarkReceived(layout.stamp)
-                    if changed or createdAny then
-                        -- Until the reload, the open chat windows still show the old layout.
-                        StaticPopup_Show("SMUVEUI_CHAT_RELOAD")
+                    if changed or createdAny or closedAny then
+                        -- Every setting above is already correct at this point, but the dock
+                        -- itself doesn't redraw on its own - confirmed live: without this, the
+                        -- new/closed windows only showed up after a reload, even though the
+                        -- stored settings were already right. mUI's own Apply() ends the same
+                        -- way (same file as CreateMissingWindows above).
+                        pcall(function()
+                            if FCF_SelectDockFrame then
+                                FCF_SelectDockFrame(DEFAULT_CHAT_FRAME)
+                            end
+                            if FCF_DockUpdate then
+                                FCF_DockUpdate()
+                            end
+                        end)
+                        S.Print("Shared chat tabs applied.")
                     end
                 end
             end
@@ -603,7 +654,7 @@ function M:Init()
 
             -- Shows last session's lines (SetUpHistory also starts recording this session's for
             -- next time); after ApplyLayout so a freshly reconfigured window isn't replayed into
-            -- right before its reload wipes it anyway.
+            -- under the wrong configuration.
             S.SafeCall(SetUpHistory)
         end)
     end)
