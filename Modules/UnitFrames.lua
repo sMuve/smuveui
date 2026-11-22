@@ -175,7 +175,42 @@ local function BarColor(unit)
     return (db.classColors and ClassColor(unit)) or (db.reactionColors and ReactionColor(unit)) or nil
 end
 
+-- Tapped by another player: the client grays the health bar itself, before our class/reaction
+-- color below would otherwise cover it back up - confirmed live via /smuve dump (a tagged enemy's
+-- target-frame HealthBarTexture came back colored 0.80,0.30,0.22, FACTION_BAR_COLORS' hostile red,
+-- never gray). UnitIsTapDenied is readable directly here - unlike Nameplates.lua's own tap check,
+-- which reads a snapshot of the bar's already-applied color instead because the API itself is
+-- secret in that context - confirmed via BetterBlizzFrames' own tap check for this same frame type
+-- (forever/modules/healthbarColor.lua, same client): it calls UnitIsTapDenied directly too, with
+-- no such workaround. Secrecy tracks the calling context, not the API, so the two files needing
+-- two different techniques for what looks like the same check isn't a contradiction.
+local function IsTapDeniedUnit(unit)
+    local okTap, tapped = pcall(UnitIsTapDenied, unit)
+    if not okTap or S.IsSecret(tapped) or not tapped then
+        return false
+    end
+    local okControlled, controlled = pcall(UnitPlayerControlled, unit)
+    return not (okControlled and not S.IsSecret(controlled) and controlled)
+end
+
 Paint = function(bar, unit)
+    if IsTapDeniedUnit(unit) then
+        -- Just leaving the bar alone (an earlier version of this check) only worked when the
+        -- client happened to repaint it itself afterward - true on a fresh target change, but
+        -- confirmed live NOT true for a unit that gets tagged while already targeted: nothing
+        -- prompts the client to recolor an already-displayed bar just because tap status changed
+        -- underneath it, so our own last-applied color just sat there forever. Painting the gray
+        -- ourselves instead (0.9,0.9,0.9 - the client's own tap-denied gray for a status bar, see
+        -- the comment above) fixes that case too.
+        painting = true
+        if bar.SetStatusBarDesaturated then
+            bar:SetStatusBarDesaturated(false)
+        end
+        bar:SetStatusBarColor(0.9, 0.9, 0.9)
+        colored[bar] = true
+        painting = false
+        return
+    end
     local color = BarColor(unit)
     painting = true
     if color then

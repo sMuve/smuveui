@@ -259,6 +259,20 @@ end
 -- it happens inside (or because of) that call, so reasserting only beforehand isn't enough -
 -- nothing then corrects it until the next proactive trigger, which is why this looked
 -- "intermittent" rather than reliably reproducible from a single event.
+-- Tapped by another player: confirmed live via /smuve dump that this bar keeps its plain
+-- power-type tint (blue Mana) instead of going gray, for the same reason the health bar did
+-- before Modules\UnitFrames.lua's own IsTapDeniedUnit fix - this is that same check, duplicated
+-- here rather than shared, same as ClassColor/ReactionColor already are between files in this
+-- codebase.
+local function IsTapDeniedUnit(unit)
+    local okTap, tapped = pcall(UnitIsTapDenied, unit)
+    if not okTap or S.IsSecret(tapped) or not tapped then
+        return false
+    end
+    local okControlled, controlled = pcall(UnitPlayerControlled, unit)
+    return not (okControlled and not S.IsSecret(controlled) and controlled)
+end
+
 local function ApplyResourceColor(bar, unit)
     if not bar or not bar.SetStatusBarColor or not Accessible(bar) then
         return
@@ -267,6 +281,17 @@ local function ApplyResourceColor(bar, unit)
     -- but with frame.unit/displayedUnit both nil - confirmed live via BugSack: UnitPowerType errors
     -- outright on a non-string argument, it doesn't just return no result.
     if type(unit) ~= "string" then
+        return
+    end
+    if IsTapDeniedUnit(unit) then
+        -- Same gray as the health bar's own tap-denied color (Modules\UnitFrames.lua) - desaturate
+        -- first, same as the power-type tint branch below does, since the atlas art is already
+        -- colored rather than a neutral base (see that branch's comment): tinting it gray without
+        -- desaturating first would just multiply onto whatever color it already was.
+        if bar.SetStatusBarDesaturated then
+            bar:SetStatusBarDesaturated(true)
+        end
+        bar:SetStatusBarColor(0.9, 0.9, 0.9)
         return
     end
     -- UnitPowerType(unit) can come back secret/protected regardless of which unit it's about -
