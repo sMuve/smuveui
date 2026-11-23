@@ -2,6 +2,11 @@
 
 All notable changes to this addon are documented here.
 
+## 0.11.6 - 2026-11-23
+- Shared chat tabs now work instantly - no more reload needed, and no more reload pop-up every login.
+- Closing a chat tab now syncs to your other characters too, just like adding one already did.
+- Tagged enemies now properly gray out on your target/focus frame, just like they already do on nameplates.
+
 ## 0.11.5 - 2026-11-20
 - Fixed the Options panel not actually opening once combat ended, even though it said it would.
 - Fixed the Options panel sometimes opening immediately during combat instead of waiting, if it had already been opened at least once before.
