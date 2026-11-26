@@ -2,6 +2,12 @@
 
 All notable changes to this addon are documented here.
 
+## 0.12.0 - 2026-11-26
+- New: a "Square minimap" option (Map & Minimap) that squares off the map's own terrain, with a thin border and the zone name, clock, tracking and calendar buttons neatly arranged around it - each piece can be hidden individually too.
+- New: a "Tooltip" section under QoL lets you hide individual pieces of a unit's tooltip - guild name, level/race, class, faction, threat percentage, "Recent Allies", and elite/rare/boss tags.
+- Enemy nameplates' "remaining buffs" row (the buffs shown above your debuffs) can now be turned off on its own.
+- Fixed a shared chat tab sometimes coming back completely empty (no message types checked) on a different character.
+
 ## 0.11.6 - 2026-11-23
 - Shared chat tabs now work instantly - no more reload needed, and no more reload pop-up every login.
 - Closing a chat tab now syncs to your other characters too, just like adding one already did.

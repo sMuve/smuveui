@@ -7,6 +7,12 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.12.0", notes = {
+        "New: a \"Square minimap\" option (Map & Minimap) that squares off the map's own terrain, with a thin border and the zone name, clock, tracking and calendar buttons neatly arranged around it - each piece can be hidden individually too.",
+        "New: a \"Tooltip\" section under QoL lets you hide individual pieces of a unit's tooltip - guild name, level/race, class, faction, threat percentage, \"Recent Allies\", and elite/rare/boss tags.",
+        "Enemy nameplates' \"remaining buffs\" row (the buffs shown above your debuffs) can now be turned off on its own.",
+        "Fixed a shared chat tab sometimes coming back completely empty (no message types checked) on a different character.",
+    } },
     { version = "0.11.6", notes = {
         "Shared chat tabs now work instantly - no more reload needed, and no more reload pop-up every login.",
         "Closing a chat tab now syncs to your other characters too, just like adding one already did.",
