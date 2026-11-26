@@ -173,6 +173,7 @@ S.defaults = {
     minimap = {
         hideButtons = true,
         alwaysShown = {},       -- button name -> true: never hidden
+        squareMap = false,      -- just the terrain shape; the round border/buttons stay as they are
     },
     chatLayout = nil,           -- account-wide chat windows, written by Modules\Chat.lua
     releaseNotes = {

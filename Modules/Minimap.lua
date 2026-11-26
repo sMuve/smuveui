@@ -11,6 +11,266 @@ local CELL = 34
 local PADDING = 8
 local MAX_COLUMNS = 6
 
+-- Square shape ---------------------------------------------------------------------------------
+-- Only the map's own terrain shape - the round border and buttons stay exactly as they are.
+-- Minimap draws its terrain through a mask texture, same as any other masked region
+-- (Minimap:SetMaskTexture); 130937/186178 are Blizzard's own stock square/circular masks,
+-- confirmed via EllesmereUI's source (EllesmereUIMinimap/EUI_Minimap_Apply.lua, same client) as
+-- the exact values it uses for this. GetMinimapShape is a global function several unrelated
+-- addons' own map-pin/button placement code calls to ask the map's current shape - overriding it
+-- is what keeps their edge-clamping correct once the terrain itself is square; left untouched if
+-- another addon already defined it, the same caution EllesmereUI's own source takes.
+local SQUARE_MASK = 130937
+local ROUND_MASK = 186178
+local function SquareShapeFn() return "SQUARE" end
+
+local function ApplySquareShape()
+    if not Minimap or not Minimap.SetMaskTexture then
+        return
+    end
+    local square = S.db.minimap.squareMap
+    Minimap:SetMaskTexture(square and SQUARE_MASK or ROUND_MASK)
+    if Minimap.SetArchBlobRingScalar then
+        Minimap:SetArchBlobRingScalar(square and 0 or 1)
+    end
+    if Minimap.SetQuestBlobRingScalar then
+        Minimap:SetQuestBlobRingScalar(square and 0 or 1)
+    end
+    if GetMinimapShape == nil or GetMinimapShape == SquareShapeFn then
+        GetMinimapShape = square and SquareShapeFn or nil
+    end
+end
+
+-- MinimapCompassTexture (atlas UI-HUD-Minimap-Frame) is the circular ring drawn over the terrain -
+-- confirmed via /smuve dump as the only full-size overlay on Minimap itself, and already one of
+-- DarkMode.lua's own tracked paths (DarkenMinimap), which only ever tints it, never shows/hides
+-- it, so hiding it here doesn't fight that. Squaring the mask without removing this would leave a
+-- round ring sitting over square corners.
+--
+-- In its place: a thin recessed/sunken border (InsetFrameTemplate) - the same one
+-- Modules\ReleaseNotes.lua's own inner scroll area and Options.lua's inset panels already use,
+-- just not the heavy ornate outer window border (PortraitFrameTemplate) tried first and rejected
+-- live as looking wrong at this size - applied directly to a plain proxy frame sized to match
+-- Minimap exactly. NineSliceUtil.ApplyLayoutByName works on any frame, not just one built from a
+-- bordered template (confirmed via its own source, Blizzard_SharedXML/NineSlice.lua: it creates
+-- whatever border pieces the container doesn't already have) - both layout names confirmed real,
+-- currently-registered ones (not just CreateFrame template names) via /smuve dump of the client's
+-- own NineSliceLayouts table. The proxy is parented to MinimapBackdrop for the same frame-level
+-- reason the plain border this replaced was (MinimapBackdrop, level 4, draws above Minimap's own
+-- level 3 - see git history for the live-confirmed detail), but sized/positioned to Minimap's own
+-- bounds with SetAllPoints so the border traces the actual terrain, not the larger backdrop. Its
+-- pieces are darkened the same way as everything else dark mode touches (S:DarkenRegions, which
+-- just walks every texture region of a frame - no need to know InsetFrameTemplate's exact piece
+-- names for that), requested live since this layout's plain metal look (unlike the ornate one
+-- tried first) takes a flat tint fine.
+local nineSliceBorder
+
+local function GetNineSliceBorder()
+    if nineSliceBorder then
+        return nineSliceBorder
+    end
+    if not (NineSliceUtil and NineSliceUtil.ApplyLayoutByName) then
+        return nil
+    end
+    local host = MinimapBackdrop or Minimap
+    nineSliceBorder = CreateFrame("Frame", nil, host)
+    nineSliceBorder:SetAllPoints(Minimap)
+    nineSliceBorder:SetFrameLevel(host:GetFrameLevel() + 1)
+    NineSliceUtil.ApplyLayoutByName(nineSliceBorder, "InsetFrameTemplate")
+    return nineSliceBorder
+end
+
+-- The round day/night (sun/moon) indicator is a separate client widget, not GameTimeFrame (the
+-- calendar button, left alone - see below) and not a Polestar pin (confirmed live: it stayed with
+-- every addon disabled, SmuveUI included). /fstack on it pointed at
+-- Interface/AddOns/Blizzard_Minimap/.../Dial.lua, and its atlases (UI-HUD-Minimap-DayCycle,
+-- UI-HUD-Minimap-Frame-Cycle) confirmed it live in a /smuve dump - anchored at
+-- MinimapCluster.MinimapContainer's own (55, 86) offset, matching its on-screen corner position.
+-- It has no stable name (generated fresh each session, e.g. "27f4364e7b0"), so it's found by its
+-- atlas instead, the same technique IsAddonButton above already uses for addon buttons.
+local DAY_CYCLE_ATLAS = "UI-HUD-Minimap-DayCycle"
+
+local function FindDayCycleIndicator()
+    local container = MinimapCluster and MinimapCluster.MinimapContainer
+    if not container then
+        return nil
+    end
+    for _, child in ipairs({ container:GetChildren() }) do
+        if child:IsObjectType("Frame") then
+            for _, region in ipairs({ child:GetRegions() }) do
+                if region:IsObjectType("Texture") and region.GetAtlas and region:GetAtlas() == DAY_CYCLE_ATLAS then
+                    return child
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function ApplySquareBorder()
+    if not Minimap then
+        return
+    end
+    local square = S.db.minimap.squareMap
+    if MinimapCompassTexture then
+        MinimapCompassTexture:SetShown(not square)
+    end
+    local dayCycle = FindDayCycleIndicator()
+    if dayCycle then
+        dayCycle:SetShown(not square)
+    end
+    -- GameTimeFrame (the actual calendar button) is deliberately left alone: confirmed live that
+    -- it's the real calendar icon, unrelated to the sun/moon indicator above.
+    local border = GetNineSliceBorder()
+    if border then
+        border:SetShown(square)
+        S:DarkenRegions(border)
+    end
+end
+
+-- MinimapCluster.MinimapContainer (which just centers Minimap inside itself, 253x253 around a
+-- 198x198 map) sits below the zone/time header with a gap - confirmed via /smuve dump as
+-- deliberate breathing room for the round shape's curve, but it just reads as dead space once the
+-- map is square. Closed by moving the container up so Minimap's own visible top edge (not the
+-- padded container's) lands right under the header, computed from the container/header's own
+-- live sizes rather than hardcoded, so this keeps working if either one's dimensions ever change.
+-- The container's original anchor is captured once and restored exactly when square mode turns
+-- back off, rather than guessing round mode's own numbers.
+local originalContainerPoint
+local POSITION_GAP = 2
+
+local function ApplySquarePosition()
+    local container = MinimapCluster and MinimapCluster.MinimapContainer
+    local header = MinimapCluster and MinimapCluster.ZoneTextButton
+    if not container or not header or not Minimap then
+        return
+    end
+    if not originalContainerPoint then
+        local point, relativeTo, relativePoint, x, y = container:GetPoint(1)
+        if point then
+            originalContainerPoint = { point, relativeTo, relativePoint, x, y }
+        end
+    end
+    if S.db.minimap.squareMap then
+        -- The container's own top edge needs to sit ABOVE the cluster's top edge by (pad - header
+        -- height - gap): it's padded by `pad` above Minimap's own visible top, so it has to move up
+        -- past the header by more than the header's height alone to actually close the gap - using
+        -- just "-(header height + gap)" here (an earlier version of this) moved the container DOWN
+        -- by that much instead, confirmed live as making the gap bigger, not smaller.
+        local pad = (container:GetHeight() - Minimap:GetHeight()) / 2
+        local x = originalContainerPoint and originalContainerPoint[4] or 0
+        container:ClearAllPoints()
+        container:SetPoint("TOP", MinimapCluster, "TOP", x, pad - header:GetHeight() - POSITION_GAP)
+    elseif originalContainerPoint then
+        container:ClearAllPoints()
+        container:SetPoint(unpack(originalContainerPoint))
+    end
+end
+
+-- Player coordinates text (MinimapContainer.PlayerCoords/.CoordText) - nudged up 1px, its font
+-- bumped one size larger and given an outline (for readability against the map's own busy
+-- terrain, same reason Modules\Chat.lua's own outline option exists), all requested live.
+-- Captured/restored the same way as everything else here.
+local originalCoordsPoint
+local originalCoordFont
+local COORD_Y_NUDGE = 0
+local COORD_FONT_INCREASE = 2
+
+local function AddOutlineFlag(flags)
+    if type(flags) == "string" and flags ~= "" then
+        if flags:find("OUTLINE", 1, true) then
+            return flags
+        end
+        return flags .. ",OUTLINE"
+    end
+    return "OUTLINE"
+end
+
+local function ApplyCoordsPosition()
+    local container = MinimapCluster and MinimapCluster.MinimapContainer
+    local coords = container and container.PlayerCoords
+    if not coords then
+        return
+    end
+    local coordText = coords.CoordText
+    if not originalCoordsPoint then
+        local point, relativeTo, relativePoint, x, y = coords:GetPoint(1)
+        if point then
+            originalCoordsPoint = { point, relativeTo, relativePoint, x, y }
+        end
+    end
+    if coordText and not originalCoordFont then
+        local file, size, flags = coordText:GetFont()
+        if file then
+            originalCoordFont = { file, size, flags }
+        end
+    end
+    if S.db.minimap.squareMap then
+        if originalCoordsPoint then
+            coords:ClearAllPoints()
+            coords:SetPoint(originalCoordsPoint[1], originalCoordsPoint[2], originalCoordsPoint[3],
+                originalCoordsPoint[4], originalCoordsPoint[5] + COORD_Y_NUDGE)
+        end
+    elseif originalCoordsPoint then
+        coords:ClearAllPoints()
+        coords:SetPoint(unpack(originalCoordsPoint))
+    end
+    -- The size/outline change applies either way, requested live - only the position nudge above
+    -- is specific to closing the square layout's gap.
+    if coordText and originalCoordFont then
+        coordText:SetFont(originalCoordFont[1], originalCoordFont[2] + COORD_FONT_INCREASE,
+            AddOutlineFlag(originalCoordFont[3]))
+    end
+end
+
+-- The mail indicator (MinimapCluster.IndicatorFrame, holding MailFrame/MiniMapMailIcon) sits right
+-- under the header by default - confirmed live that once the gap above is closed, it overlaps the
+-- square map's top-left corner. Moved below the map instead, at the same Y the player-coordinates
+-- text (MinimapContainer.PlayerCoords) uses (read live, after ApplyCoordsPosition's own nudge, not
+-- hardcoded), minus a further 2px requested live once the first attempt looked slightly off.
+local originalIndicatorPoint
+local MAIL_PADDING = 4
+local MAIL_Y_NUDGE = 6
+local MAIL_FALLBACK_Y = -18 -- only used if PlayerCoords isn't there to read a real value from
+
+local function ApplyMailPosition()
+    local indicator = MinimapCluster and MinimapCluster.IndicatorFrame
+    if not indicator or not Minimap then
+        return
+    end
+    if not originalIndicatorPoint then
+        local point, relativeTo, relativePoint, x, y = indicator:GetPoint(1)
+        if point then
+            originalIndicatorPoint = { point, relativeTo, relativePoint, x, y }
+        end
+    end
+    if S.db.minimap.squareMap then
+        local coords = MinimapCluster.MinimapContainer and MinimapCluster.MinimapContainer.PlayerCoords
+        local _, _, _, _, coordY = coords and coords:GetPoint(1)
+        indicator:ClearAllPoints()
+        indicator:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", MAIL_PADDING, (coordY or MAIL_FALLBACK_Y) - MAIL_Y_NUDGE)
+    elseif originalIndicatorPoint then
+        indicator:ClearAllPoints()
+        indicator:SetPoint(unpack(originalIndicatorPoint))
+    end
+end
+
+-- Edit Mode re-applies its own saved layout to the minimap system (size/position included)
+-- whenever a layout is saved or Edit Mode closes - confirmed live as the reason resizing the map
+-- in Edit Mode brought the header gap and the mail icon's default position back: our own SetPoint
+-- calls above are an overlay on top of Edit Mode's layout, not part of it, so Edit Mode has no idea
+-- to preserve them. Reapplied on the same two triggers other addons use for this: the
+-- EDIT_MODE_LAYOUTS_UPDATED event (fires once a layout change is actually saved) and Edit Mode's
+-- own manager frame closing (covers a resize that's previewed live but only saved on exit).
+local function ReapplySquareLayout()
+    if not S.db.minimap.squareMap then
+        return
+    end
+    ApplySquarePosition()
+    ApplyCoordsPosition()
+    ApplyMailPosition()
+end
+
 -- Client buttons that live on the minimap and must never be treated as addon buttons.
 local BLIZZARD_PREFIXES = {
     "Minimap", "MiniMap", "GameTime", "TimeManager", "QueueStatus", "ExpansionLanding", "GarrisonLanding",
@@ -390,6 +650,17 @@ function M:Init()
         return
     end
 
+    ApplySquareShape()
+    ApplySquareBorder()
+    ApplySquarePosition()
+    ApplyCoordsPosition()
+    ApplyMailPosition()
+
+    S:On("EDIT_MODE_LAYOUTS_UPDATED", ReapplySquareLayout)
+    if EditModeManagerFrame then
+        EditModeManagerFrame:HookScript("OnHide", ReapplySquareLayout)
+    end
+
     local compartment = AddonCompartmentFrame
     if compartment then
         compartment:HookScript("OnShow", function(self)
@@ -470,6 +741,11 @@ function M:Refresh()
     if not S.db.minimap.hideButtons then
         revealed = false
     end
+    ApplySquareShape()
+    ApplySquareBorder()
+    ApplySquarePosition()
+    ApplyCoordsPosition()
+    ApplyMailPosition()
     self:Scan()
     self:Apply()
 end

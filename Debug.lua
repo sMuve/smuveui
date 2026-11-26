@@ -1233,6 +1233,22 @@ function S:Dump()
     end
 
     -- Modules that are switched off.
+    -- The minimap's own frame tree - researched for removing the circular border art and adding a
+    -- plain black one affected by dark mode instead.
+    debug.minimap = {}
+    Walk(MinimapCluster or Minimap, 0, 6, debug.minimap)
+
+    -- Registered NineSlice border layout names - researched to borrow a stock ornate border for
+    -- the square minimap (NineSliceUtil.ApplyLayoutByName can apply one to any plain frame, not
+    -- just a frame built from a bordered template).
+    debug.nineSliceLayouts = {}
+    if NineSliceLayouts then
+        for name in pairs(NineSliceLayouts) do
+            table.insert(debug.nineSliceLayouts, tostring(name))
+        end
+        table.sort(debug.nineSliceLayouts)
+    end
+
     debug.disabledModules = S.db.disabledModules
 
     SmuveUIDebugDB = debug

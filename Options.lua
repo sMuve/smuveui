@@ -420,7 +420,7 @@ StaticPopupDialogs["SMUVEUI_AURA_RELOAD"] = {
 
 CATEGORIES[1] = { key = "appearance", title = "Appearance", build = function(layout)
     Header(layout, "Dark Mode")
-    local getColorMode, setColorMode = Setting("appearance", "colorMode", "DarkMode")
+    local getColorMode, setColorMode = Setting("appearance", "colorMode", { "DarkMode", "Minimap" })
     Dropdown(layout, "Color mode",
         "How the default UI's borders, frames, windows, minimap and menus are tinted. Textures stay the client's own either way. Dark mode and Class color mode are mutually exclusive.",
         function()
@@ -998,6 +998,9 @@ CATEGORIES[18] = { key = "minimap", title = "Map & Minimap", build = function(la
         "Addon buttons around the minimap and the client's addon compartment are hidden; right-click the map to open them all in one box.",
         Setting("minimap", "hideButtons", "Minimap"))
     Note(layout, "Right-click the minimap to open the box with the hidden buttons. It closes on the next right-click or shortly after the mouse leaves.")
+    Checkbox(layout, "Square minimap",
+        "The map's own terrain becomes square, its round ring replaced by a thin inset border. Buttons stay as they are.",
+        Setting("minimap", "squareMap", "Minimap"))
     Header(layout, "Buttons in the box (unchecked ones stay on the minimap)")
     page.listStart = layout.y
     page.buttonRows = {}
