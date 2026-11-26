@@ -1249,6 +1249,25 @@ function S:Dump()
         table.sort(debug.nineSliceLayouts)
     end
 
+    -- Actual live font values for the square minimap's own text (coordinates, zone, clock) -
+    -- researched because they look inconsistently sized despite the code assuming they all share
+    -- one base size plus one shared increase.
+    debug.minimapText = {}
+    local function DumpTextFont(label, fontString)
+        if not fontString then
+            debug.minimapText[label] = "nil"
+            return
+        end
+        local file, size, flags = fontString:GetFont()
+        debug.minimapText[label] = string.format("file=%s size=%s flags=%s height=%s stringHeight=%s scale=%s",
+            tostring(file), tostring(size), tostring(flags), tostring(fontString:GetHeight()),
+            tostring(fontString:GetStringHeight()), tostring(fontString:GetEffectiveScale()))
+    end
+    local coords = MinimapCluster and MinimapCluster.MinimapContainer and MinimapCluster.MinimapContainer.PlayerCoords
+    DumpTextFont("coords", coords and coords.CoordText)
+    DumpTextFont("zone", MinimapZoneText)
+    DumpTextFont("clock", TimeManagerClockTicker)
+
     debug.disabledModules = S.db.disabledModules
 
     SmuveUIDebugDB = debug

@@ -132,17 +132,19 @@ end
 -- 198x198 map) sits below the zone/time header with a gap - confirmed via /smuve dump as
 -- deliberate breathing room for the round shape's curve, but it just reads as dead space once the
 -- map is square. Closed by moving the container up so Minimap's own visible top edge (not the
--- padded container's) lands right under the header, computed from the container/header's own
--- live sizes rather than hardcoded, so this keeps working if either one's dimensions ever change.
--- The container's original anchor is captured once and restored exactly when square mode turns
--- back off, rather than guessing round mode's own numbers.
+-- padded container's) lands right at the cluster's own top edge, computed from the container's
+-- own live size rather than hardcoded, so this keeps working if its dimensions ever change. No
+-- longer reserving the header's own height above that: since ApplyHeaderOverlay below moves the
+-- header's content onto the terrain itself instead of leaving it in its own bar, there's no
+-- separate header row left to leave room for. The container's original anchor is captured once
+-- and restored exactly when square mode turns back off, rather than guessing round mode's own
+-- numbers.
 local originalContainerPoint
 local POSITION_GAP = 2
 
 local function ApplySquarePosition()
     local container = MinimapCluster and MinimapCluster.MinimapContainer
-    local header = MinimapCluster and MinimapCluster.ZoneTextButton
-    if not container or not header or not Minimap then
+    if not container or not Minimap then
         return
     end
     if not originalContainerPoint then
@@ -152,29 +154,25 @@ local function ApplySquarePosition()
         end
     end
     if S.db.minimap.squareMap then
-        -- The container's own top edge needs to sit ABOVE the cluster's top edge by (pad - header
-        -- height - gap): it's padded by `pad` above Minimap's own visible top, so it has to move up
-        -- past the header by more than the header's height alone to actually close the gap - using
-        -- just "-(header height + gap)" here (an earlier version of this) moved the container DOWN
-        -- by that much instead, confirmed live as making the gap bigger, not smaller.
+        -- The container's own top edge needs to sit ABOVE the cluster's top edge by (pad - gap):
+        -- it's padded by `pad` above Minimap's own visible top, so it has to move up by more than
+        -- just the gap alone to actually close the gap - using just "-gap" here (an earlier version
+        -- of this, back when a header height was still subtracted too) moved the container DOWN
+        -- instead, confirmed live as making the gap bigger, not smaller.
         local pad = (container:GetHeight() - Minimap:GetHeight()) / 2
         local x = originalContainerPoint and originalContainerPoint[4] or 0
         container:ClearAllPoints()
-        container:SetPoint("TOP", MinimapCluster, "TOP", x, pad - header:GetHeight() - POSITION_GAP)
+        container:SetPoint("TOP", MinimapCluster, "TOP", x, pad - POSITION_GAP)
     elseif originalContainerPoint then
         container:ClearAllPoints()
         container:SetPoint(unpack(originalContainerPoint))
     end
 end
 
--- Player coordinates text (MinimapContainer.PlayerCoords/.CoordText) - nudged up 1px, its font
--- bumped one size larger and given an outline (for readability against the map's own busy
--- terrain, same reason Modules\Chat.lua's own outline option exists), all requested live.
--- Captured/restored the same way as everything else here.
-local originalCoordsPoint
-local originalCoordFont
-local COORD_Y_NUDGE = 0
-local COORD_FONT_INCREASE = 2
+-- Shared by the coordinates, zone and clock text below, so all three end up at the same size with
+-- the same outline instead of each drifting independently - confirmed live they all share the same
+-- original size (10) to begin with, so one shared increase keeps them that way.
+local MINIMAP_TEXT_SIZE_INCREASE = 2
 
 local function AddOutlineFlag(flags)
     if type(flags) == "string" and flags ~= "" then
@@ -186,10 +184,35 @@ local function AddOutlineFlag(flags)
     return "OUTLINE"
 end
 
+-- Coordinates and clock both sit in the footer strip below the square border, each anchored by its
+-- own bottom edge - but PlayerCoords (10px tall) and TimeManagerClockButton (16px tall) aren't the
+-- same height, so giving them the identical raw Y offset (tried live) lines up their bottom edges,
+-- not their visual centers where the text actually sits - the taller clock frame then floats
+-- noticeably higher than the shorter coords frame for the same padding number. This computes each
+-- one's own bottom-edge offset from a single shared target center instead, reading each frame's
+-- live height rather than hardcoding the half-height difference between them, so the two actually
+-- align regardless of which one's size changes later.
+local FOOTER_CENTER_Y = -11
+
+local function FooterBottomOffset(frame)
+    return FOOTER_CENTER_Y - frame:GetHeight() / 2
+end
+
+-- Player coordinates text (MinimapContainer.PlayerCoords/.CoordText) - handled the same deliberate
+-- way as the clock below instead of left at whatever its own native anchor happened to be: an
+-- earlier version left position/size untouched entirely, confirmed live as looking inconsistent
+-- (noticeably smaller, oddly placed) next to the zone text and clock once those got the same
+-- treatment. Runs before ApplyClockPosition/ApplyMailPosition below (see the call order where
+-- these are invoked) since both of those read this text's current position to line themselves up
+-- with it - they need the position this sets, not whatever it was before.
+local originalCoordsPoint
+local originalCoordFont
+local originalCoordTextPoints
+
 local function ApplyCoordsPosition()
     local container = MinimapCluster and MinimapCluster.MinimapContainer
     local coords = container and container.PlayerCoords
-    if not coords then
+    if not coords or not Minimap then
         return
     end
     local coordText = coords.CoordText
@@ -205,21 +228,46 @@ local function ApplyCoordsPosition()
             originalCoordFont = { file, size, flags }
         end
     end
+    -- CoordText itself is anchored TOPLEFT+BOTTOMRIGHT to PlayerCoords, filling that frame's fixed
+    -- 90x10 box exactly - confirmed live via /smuve dump (GetHeight stuck at 10 while GetStringHeight
+    -- grew to ~11.7 with the bigger font, unlike the zone/clock text, both anchored by a single
+    -- point and free to size themselves) as the reason it looked visually smaller/clipped next to
+    -- them despite sharing the same font size. Re-anchored to a single CENTER point instead, same
+    -- fix as MinimapZoneText's own width constraint above, so it can size itself to the larger font.
+    if coordText and not originalCoordTextPoints then
+        originalCoordTextPoints = {}
+        for i = 1, coordText:GetNumPoints() do
+            local point, relativeTo, relativePoint, x, y = coordText:GetPoint(i)
+            table.insert(originalCoordTextPoints, { point, relativeTo, relativePoint, x, y })
+        end
+    end
     if S.db.minimap.squareMap then
+        coords:ClearAllPoints()
+        coords:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, FooterBottomOffset(coords))
+        coords:SetShown(S.db.minimap.showCoords)
+        if coordText and originalCoordFont then
+            coordText:SetFont(originalCoordFont[1], originalCoordFont[2] + MINIMAP_TEXT_SIZE_INCREASE,
+                AddOutlineFlag(originalCoordFont[3]))
+            coordText:ClearAllPoints()
+            coordText:SetPoint("CENTER", coords, "CENTER", 0, 0)
+            coordText:SetWidth(0)
+            coordText:SetHeight(0)
+        end
+    else
         if originalCoordsPoint then
             coords:ClearAllPoints()
-            coords:SetPoint(originalCoordsPoint[1], originalCoordsPoint[2], originalCoordsPoint[3],
-                originalCoordsPoint[4], originalCoordsPoint[5] + COORD_Y_NUDGE)
+            coords:SetPoint(unpack(originalCoordsPoint))
+            coords:SetShown(true)
         end
-    elseif originalCoordsPoint then
-        coords:ClearAllPoints()
-        coords:SetPoint(unpack(originalCoordsPoint))
-    end
-    -- The size/outline change applies either way, requested live - only the position nudge above
-    -- is specific to closing the square layout's gap.
-    if coordText and originalCoordFont then
-        coordText:SetFont(originalCoordFont[1], originalCoordFont[2] + COORD_FONT_INCREASE,
-            AddOutlineFlag(originalCoordFont[3]))
+        if coordText and originalCoordFont then
+            coordText:SetFont(unpack(originalCoordFont))
+        end
+        if coordText and originalCoordTextPoints then
+            coordText:ClearAllPoints()
+            for _, point in ipairs(originalCoordTextPoints) do
+                coordText:SetPoint(unpack(point))
+            end
+        end
     end
 end
 
@@ -229,9 +277,11 @@ end
 -- text (MinimapContainer.PlayerCoords) uses (read live, after ApplyCoordsPosition's own nudge, not
 -- hardcoded), minus a further 2px requested live once the first attempt looked slightly off.
 local originalIndicatorPoint
+local originalIndicatorScale
 local MAIL_PADDING = 4
 local MAIL_Y_NUDGE = 6
 local MAIL_FALLBACK_Y = -18 -- only used if PlayerCoords isn't there to read a real value from
+local MAIL_SCALE = 0.8
 
 local function ApplyMailPosition()
     local indicator = MinimapCluster and MinimapCluster.IndicatorFrame
@@ -244,14 +294,233 @@ local function ApplyMailPosition()
             originalIndicatorPoint = { point, relativeTo, relativePoint, x, y }
         end
     end
+    if not originalIndicatorScale then
+        originalIndicatorScale = indicator:GetScale()
+    end
     if S.db.minimap.squareMap then
         local coords = MinimapCluster.MinimapContainer and MinimapCluster.MinimapContainer.PlayerCoords
         local _, _, _, _, coordY = coords and coords:GetPoint(1)
         indicator:ClearAllPoints()
         indicator:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", MAIL_PADDING, (coordY or MAIL_FALLBACK_Y) - MAIL_Y_NUDGE)
-    elseif originalIndicatorPoint then
-        indicator:ClearAllPoints()
-        indicator:SetPoint(unpack(originalIndicatorPoint))
+        indicator:SetScale(MAIL_SCALE)
+        -- Alpha, not SetShown: confirmed live that Hide()-ing this toggled off, then re-showing it,
+        -- left the mail icon itself gone even with mail still pending. IndicatorFrame isn't the
+        -- only thing driving the icon's own visibility - the client's own "do I have mail" check
+        -- also shows/hides the inner MailFrame directly, independently of our wrapper, and a hidden
+        -- parent coming back doesn't un-hide a child that got hidden on its own in the meantime;
+        -- nothing re-runs that check just because our own setting toggled, since the real mail
+        -- state never changed. Alpha never touches that child's own shown state at all.
+        indicator:SetAlpha(S.db.minimap.showMail and 1 or 0)
+    else
+        if originalIndicatorPoint then
+            indicator:ClearAllPoints()
+            indicator:SetPoint(unpack(originalIndicatorPoint))
+            indicator:SetAlpha(1)
+        end
+        if originalIndicatorScale then
+            indicator:SetScale(originalIndicatorScale)
+        end
+    end
+end
+
+-- Removing the header bar's own background and overlaying its contents (zone name, tracking and
+-- calendar - the clock moved out on its own below, see ApplyClockPosition) directly on the square
+-- terrain's top edge instead - the user's own creative idea for a cleaner square look, after trying
+-- just closing the gap above it. Only ZoneTextButton itself is moved: Tracking and GameTimeFrame
+-- are both already anchored relative to IT (confirmed via /smuve dump), so they come along
+-- automatically without each needing its own reposition. Centered rather than flush left:
+-- ZoneTextButton is 152px wide against Minimap's 198px, and Tracking/GameTimeFrame both hang off
+-- its outer edges rather than within its own width, so flush-left risked GameTimeFrame running
+-- past the map's right edge - centering splits that margin evenly.
+--
+-- Frame level still needs individual attention though: these pieces are parented to
+-- MinimapCluster, not Minimap/MinimapBackdrop, but level ordering is evidently global within a
+-- strata on this client regardless of parent chain (the same lesson the border above is built on,
+-- Minimap level 3 vs MinimapBackdrop level 4) - Tracking's own level (2) and GameTimeFrame's (4)
+-- both sit at or below MinimapBackdrop's (4), so moved onto the terrain unchanged they'd render
+-- underneath it; ZoneTextButton (10) was already high enough.
+--
+-- Readability against moving terrain is the known tradeoff (same reason Modules\Chat.lua's own
+-- outline option exists) - mitigated with an outline on the zone text, same treatment already
+-- given the coordinates text.
+local HEADER_OVERLAY_INSET = 6
+local HEADER_OVERLAY_LEVEL = 20
+
+local originalHeaderBgShown
+local originalHeaderPoint
+local originalZoneTextFont
+local originalZoneTextPoint
+local originalZoneTextWidth
+local originalZoneTextJustify
+local originalTrackingLevel
+local originalCalendarLevel
+
+local function CaptureLevel(frame)
+    return frame.GetFrameLevel and frame:GetFrameLevel() or nil
+end
+
+local function ApplyHeaderOverlay()
+    local cluster = MinimapCluster
+    local header = cluster and cluster.ZoneTextButton
+    if not cluster or not header or not Minimap then
+        return
+    end
+    local square = S.db.minimap.squareMap
+    local tracking = cluster.Tracking
+    local calendar = GameTimeFrame
+
+    local bg = header.StateTexture
+    if bg then
+        if originalHeaderBgShown == nil then
+            originalHeaderBgShown = bg:IsShown()
+        end
+        bg:SetShown(not square and originalHeaderBgShown)
+    end
+
+    if not originalHeaderPoint then
+        local point, relativeTo, relativePoint, x, y = header:GetPoint(1)
+        if point then
+            originalHeaderPoint = { point, relativeTo, relativePoint, x, y }
+        end
+    end
+    if tracking and not originalTrackingLevel then
+        originalTrackingLevel = CaptureLevel(tracking)
+    end
+    if calendar and not originalCalendarLevel then
+        originalCalendarLevel = CaptureLevel(calendar)
+    end
+    if MinimapZoneText and not originalZoneTextFont then
+        local file, size, flags = MinimapZoneText:GetFont()
+        if file then
+            originalZoneTextFont = { file, size, flags }
+        end
+    end
+    if MinimapZoneText and not originalZoneTextPoint then
+        local point, relativeTo, relativePoint, x, y = MinimapZoneText:GetPoint(1)
+        if point then
+            originalZoneTextPoint = { point, relativeTo, relativePoint, x, y }
+        end
+        originalZoneTextWidth = MinimapZoneText:GetWidth()
+        originalZoneTextJustify = MinimapZoneText:GetJustifyH()
+    end
+
+    if square then
+        header:ClearAllPoints()
+        header:SetPoint("TOP", Minimap, "TOP", 0, -HEADER_OVERLAY_INSET)
+        if tracking then
+            tracking:SetFrameLevel(HEADER_OVERLAY_LEVEL)
+            tracking:SetShown(S.db.minimap.showTracking)
+        end
+        if calendar then
+            calendar:SetFrameLevel(HEADER_OVERLAY_LEVEL)
+            calendar:SetShown(S.db.minimap.showCalendar)
+        end
+        if MinimapZoneText and originalZoneTextFont then
+            MinimapZoneText:SetFont(originalZoneTextFont[1], originalZoneTextFont[2] + MINIMAP_TEXT_SIZE_INCREASE,
+                AddOutlineFlag(originalZoneTextFont[3]))
+        end
+        if MinimapZoneText then
+            -- Centered on the button (itself centered on the map, see above) instead of left-
+            -- anchored, and freed from its original fixed width so it grows symmetrically from
+            -- that center instead of truncating a long zone name - confirmed live as a real problem
+            -- at the old fixed width ("Tranquil Gardens Cem...").
+            MinimapZoneText:ClearAllPoints()
+            MinimapZoneText:SetPoint("CENTER", header, "CENTER", 0, 0)
+            MinimapZoneText:SetWidth(0)
+            MinimapZoneText:SetJustifyH("CENTER")
+            MinimapZoneText:SetShown(S.db.minimap.showZoneText)
+        end
+    else
+        if originalHeaderPoint then
+            header:ClearAllPoints()
+            header:SetPoint(unpack(originalHeaderPoint))
+        end
+        if tracking and originalTrackingLevel then
+            tracking:SetFrameLevel(originalTrackingLevel)
+            tracking:SetShown(true)
+        end
+        if calendar and originalCalendarLevel then
+            calendar:SetFrameLevel(originalCalendarLevel)
+            calendar:SetShown(true)
+        end
+        if MinimapZoneText and originalZoneTextFont then
+            MinimapZoneText:SetFont(unpack(originalZoneTextFont))
+        end
+        if MinimapZoneText and originalZoneTextPoint then
+            MinimapZoneText:ClearAllPoints()
+            MinimapZoneText:SetPoint(unpack(originalZoneTextPoint))
+            if originalZoneTextWidth then
+                MinimapZoneText:SetWidth(originalZoneTextWidth)
+            end
+            if originalZoneTextJustify then
+                MinimapZoneText:SetJustifyH(originalZoneTextJustify)
+            end
+            MinimapZoneText:SetShown(true)
+        end
+    end
+end
+
+-- The clock (TimeManagerClockButton/.TimeManagerClockTicker) moved to the bottom-right corner,
+-- mirroring the mail icon's bottom-left spot and the coordinates text between them - requested
+-- live to declutter the top-right corner, which was sharing space with the calendar button.
+-- Detached from the header group above (it no longer rides along with ZoneTextButton) and given
+-- its own independent anchor/level/font, the same pattern ApplyMailPosition already uses.
+local originalClockPoint
+local originalClockLevel
+local originalClockFont
+local CLOCK_PADDING = 4
+
+local function ApplyClockPosition()
+    local clock = TimeManagerClockButton
+    local clockText = TimeManagerClockTicker
+    if not clock or not Minimap then
+        return
+    end
+    if not originalClockPoint then
+        local point, relativeTo, relativePoint, x, y = clock:GetPoint(1)
+        if point then
+            originalClockPoint = { point, relativeTo, relativePoint, x, y }
+        end
+    end
+    if not originalClockLevel then
+        originalClockLevel = CaptureLevel(clock)
+    end
+    if clockText and not originalClockFont then
+        local file, size, flags = clockText:GetFont()
+        if file then
+            originalClockFont = { file, size, flags }
+        end
+    end
+    if S.db.minimap.squareMap then
+        -- Mail and coordinates both sit in the footer strip below the square border, not inside
+        -- the terrain's own corner - confirmed live as a real mistake in an earlier version of
+        -- this, which anchored the clock with a small Y padding meant to tuck it just inside the
+        -- map's bottom-right corner instead, landing it in the wrong area entirely (floating
+        -- outside/below everything, not alongside mail and coordinates where it belongs). The Y
+        -- itself comes from the shared FooterBottomOffset helper above (same one coordinates use),
+        -- not a plain constant of its own: a same-valued plain constant here (tried live) still
+        -- left it visually off from the coordinates text, since that doesn't account for the two
+        -- frames' different heights - see that helper's own comment.
+        clock:ClearAllPoints()
+        clock:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -CLOCK_PADDING, FooterBottomOffset(clock))
+        clock:SetFrameLevel(HEADER_OVERLAY_LEVEL)
+        clock:SetShown(S.db.minimap.showClock)
+        if clockText and originalClockFont then
+            clockText:SetFont(originalClockFont[1], originalClockFont[2] + MINIMAP_TEXT_SIZE_INCREASE,
+                AddOutlineFlag(originalClockFont[3]))
+        end
+    else
+        if originalClockPoint then
+            clock:ClearAllPoints()
+            clock:SetPoint(unpack(originalClockPoint))
+            clock:SetShown(true)
+        end
+        if originalClockLevel then
+            clock:SetFrameLevel(originalClockLevel)
+        end
+        if clockText and originalClockFont then
+            clockText:SetFont(unpack(originalClockFont))
+        end
     end
 end
 
@@ -267,14 +536,20 @@ local function ReapplySquareLayout()
         return
     end
     ApplySquarePosition()
+    ApplyHeaderOverlay()
     ApplyCoordsPosition()
+    ApplyClockPosition()
     ApplyMailPosition()
 end
 
--- Client buttons that live on the minimap and must never be treated as addon buttons.
+-- Client buttons that live on the minimap and must never be treated as addon buttons. A bare "LFG"
+-- entry used to be here too, meant for Blizzard's own LFG elements (MiniMapLFG below already
+-- covers those) - confirmed live as a real bug instead: the "LFG Forever" addon's own button,
+-- LFGForeverMinimapButton, also starts with "LFG", so it silently matched and was never
+-- hidden/boxed like every other addon button is.
 local BLIZZARD_PREFIXES = {
     "Minimap", "MiniMap", "GameTime", "TimeManager", "QueueStatus", "ExpansionLanding", "GarrisonLanding",
-    "HybridMinimap", "MinimapBackdrop", "AddonCompartment", "BattlefieldMinimap", "LFG", "MiniMapLFG",
+    "HybridMinimap", "MinimapBackdrop", "AddonCompartment", "BattlefieldMinimap", "MiniMapLFG",
     "MiniMapBattlefield", "MiniMapMail", "MiniMapTracking", "MiniMapWorldMap", "FeedbackUI",
     "GuildInstanceDifficulty", "MiniMapInstanceDifficulty", "MiniMapChallengeMode", "DurabilityFrame",
     "SmuveUI",
@@ -653,7 +928,9 @@ function M:Init()
     ApplySquareShape()
     ApplySquareBorder()
     ApplySquarePosition()
+    ApplyHeaderOverlay()
     ApplyCoordsPosition()
+    ApplyClockPosition()
     ApplyMailPosition()
 
     S:On("EDIT_MODE_LAYOUTS_UPDATED", ReapplySquareLayout)
@@ -744,7 +1021,9 @@ function M:Refresh()
     ApplySquareShape()
     ApplySquareBorder()
     ApplySquarePosition()
+    ApplyHeaderOverlay()
     ApplyCoordsPosition()
+    ApplyClockPosition()
     ApplyMailPosition()
     self:Scan()
     self:Apply()

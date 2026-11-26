@@ -1001,6 +1001,24 @@ CATEGORIES[18] = { key = "minimap", title = "Map & Minimap", build = function(la
     Checkbox(layout, "Square minimap",
         "The map's own terrain becomes square, its round ring replaced by a thin inset border. Buttons stay as they are.",
         Setting("minimap", "squareMap", "Minimap"))
+    Note(layout, "The checkboxes below only apply while Square minimap is on - they show or hide each piece of its own overlay (zone name, clock, tracking, calendar, mail, coordinates).")
+    do
+        local columns = Columns(layout, 2)
+        local left, right = columns[1], columns[2]
+        Checkbox(left, "Zone name", "The current zone's name, overlaid on the map's top edge.",
+            Setting("minimap", "showZoneText", "Minimap"))
+        Checkbox(left, "Tracking button", "The magnifying glass button that opens the tracking menu.",
+            Setting("minimap", "showTracking", "Minimap"))
+        Checkbox(left, "Calendar button", "The button that opens the calendar.",
+            Setting("minimap", "showCalendar", "Minimap"))
+        Checkbox(right, "Clock", "The current time, in the map's bottom-right corner.",
+            Setting("minimap", "showClock", "Minimap"))
+        Checkbox(right, "Coordinates", "Your current position, below the map.",
+            Setting("minimap", "showCoords", "Minimap"))
+        Checkbox(right, "Mail icon", "The new-mail indicator, in the map's bottom-left corner.",
+            Setting("minimap", "showMail", "Minimap"))
+        JoinColumns(layout, columns)
+    end
     Header(layout, "Buttons in the box (unchecked ones stay on the minimap)")
     page.listStart = layout.y
     page.buttonRows = {}

@@ -174,6 +174,14 @@ S.defaults = {
         hideButtons = true,
         alwaysShown = {},       -- button name -> true: never hidden
         squareMap = false,      -- just the terrain shape; the round border/buttons stay as they are
+        -- Each of square mode's own overlay elements, individually hideable. Only apply while
+        -- squareMap is on.
+        showTracking = true,
+        showCalendar = true,
+        showZoneText = true,
+        showMail = true,
+        showCoords = true,
+        showClock = true,
     },
     chatLayout = nil,           -- account-wide chat windows, written by Modules\Chat.lua
     releaseNotes = {
