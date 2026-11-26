@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.12.1 - 2026-11-27
+- Fixed the square minimap still showing the round day/night indicator at night.
+
 ## 0.12.0 - 2026-11-26
 - New: a "Square minimap" option (Map & Minimap) that squares off the map's own terrain, with a thin border and the zone name, clock, tracking and calendar buttons neatly arranged around it - each piece can be hidden individually too.
 - New: a "Tooltip" section under QoL lets you hide individual pieces of a unit's tooltip - guild name, level/race, class, faction, threat percentage, "Recent Allies", and elite/rare/boss tags.

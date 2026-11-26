@@ -7,6 +7,9 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.12.1", notes = {
+        "Fixed the square minimap still showing the round day/night indicator at night.",
+    } },
     { version = "0.12.0", notes = {
         "New: a \"Square minimap\" option (Map & Minimap) that squares off the map's own terrain, with a thin border and the zone name, clock, tracking and calendar buttons neatly arranged around it - each piece can be hidden individually too.",
         "New: a \"Tooltip\" section under QoL lets you hide individual pieces of a unit's tooltip - guild name, level/race, class, faction, threat percentage, \"Recent Allies\", and elite/rare/boss tags.",
