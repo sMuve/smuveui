@@ -83,12 +83,18 @@ end
 -- The round day/night (sun/moon) indicator is a separate client widget, not GameTimeFrame (the
 -- calendar button, left alone - see below) and not a Polestar pin (confirmed live: it stayed with
 -- every addon disabled, SmuveUI included). /fstack on it pointed at
--- Interface/AddOns/Blizzard_Minimap/.../Dial.lua, and its atlases (UI-HUD-Minimap-DayCycle,
--- UI-HUD-Minimap-Frame-Cycle) confirmed it live in a /smuve dump - anchored at
--- MinimapCluster.MinimapContainer's own (55, 86) offset, matching its on-screen corner position.
--- It has no stable name (generated fresh each session, e.g. "27f4364e7b0"), so it's found by its
--- atlas instead, the same technique IsAddonButton above already uses for addon buttons.
-local DAY_CYCLE_ATLAS = "UI-HUD-Minimap-DayCycle"
+-- Interface/AddOns/Blizzard_Minimap/.../Dial.lua, and its atlases confirmed it live in a /smuve
+-- dump - anchored at MinimapCluster.MinimapContainer's own (55, 86) offset, matching its on-screen
+-- corner position. It has no stable name (generated fresh each session, e.g. "27f4364e7b0"), so
+-- it's found by its atlas instead, the same technique IsAddonButton above already uses for addon
+-- buttons. The background texture's own atlas swaps between day and night (UI-HUD-Minimap-DayCycle
+-- vs UI-HUD-Minimap-NightCycle, confirmed live - the moon kept showing through square mode until
+-- this was added) - UI-HUD-Minimap-Frame-Cycle is the dial's ring overlay, same at both times.
+local DAY_CYCLE_ATLASES = {
+    ["UI-HUD-Minimap-DayCycle"] = true,
+    ["UI-HUD-Minimap-NightCycle"] = true,
+    ["UI-HUD-Minimap-Frame-Cycle"] = true,
+}
 
 local function FindDayCycleIndicator()
     local container = MinimapCluster and MinimapCluster.MinimapContainer
@@ -98,7 +104,7 @@ local function FindDayCycleIndicator()
     for _, child in ipairs({ container:GetChildren() }) do
         if child:IsObjectType("Frame") then
             for _, region in ipairs({ child:GetRegions() }) do
-                if region:IsObjectType("Texture") and region.GetAtlas and region:GetAtlas() == DAY_CYCLE_ATLAS then
+                if region:IsObjectType("Texture") and region.GetAtlas and DAY_CYCLE_ATLASES[region:GetAtlas()] then
                     return child
                 end
             end
