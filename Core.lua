@@ -136,6 +136,7 @@ S.defaults = {
         debuffRows = 2,
         debuffX = 0,
         debuffY = 24,           -- above the bar, leaving room for the name
+        showBuffs = true,       -- the "remaining buffs" row above the debuffs
         buffSize = 18,
         buffPerRow = 6,
         buffRows = 1,

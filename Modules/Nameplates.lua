@@ -1822,10 +1822,18 @@ function M:Bind(unit)
         container:SetFrameLevel(level)
     end
     PlaceContainers(set, frame, unit)
-    for _, container in pairs(set.containers) do
+    for name, container in pairs(set.containers) do
         container:SetUnit(unit)
-        container:SetEnabled(true)
-        container:Show()
+        -- The "remaining buffs" row only, individually toggleable - every other container
+        -- (crowd control, important buffs, debuffs) stays governed purely by the master
+        -- "enabled" switch above, same as before.
+        if name == "buffs" and not db.showBuffs then
+            container:SetEnabled(false)
+            container:Hide()
+        else
+            container:SetEnabled(true)
+            container:Show()
+        end
     end
     SetDefaultAurasShown(frame, false)
 end

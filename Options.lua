@@ -830,9 +830,10 @@ CATEGORIES[16] = { key = "nameplates", title = "Nameplates", build = function(la
     if not S.modules.Nameplates:IsSupported() then
         Note(layout, "This client doesn't offer the aura containers these nameplates need, so they are inactive.")
     end
-    local enableRow = Checkbox(layout, "Enable", "Crowd control right of the bar, important buffs left of it, your debuffs and the remaining buffs in rows above it.", NP("enabled"))
+    local enableRow = Checkbox(layout, "Advanced aura separation", "Crowd control right of the bar, important buffs left of it, your debuffs and the remaining buffs in rows above it.", NP("enabled"))
     CheckboxRight(enableRow, "Test mode", "Shows sample icons on every visible nameplate, to check sizes and offsets. Always off after a reload.", NP("testMode"))
     Checkbox(layout, "Only my debuffs", "The debuff row shows only debuffs you applied. Crowd control is always shown.", NP("onlyMyDebuffs"))
+    Checkbox(layout, "Show buffs", "The \"remaining buffs\" row above the debuffs. Important buffs and crowd control are unaffected.", NP("showBuffs"))
     Checkbox(layout, "Glow on purgeable buffs", "Buffs you can remove (Purge, Dispel Magic, Tranquilizing Shot, ...) on enemy nameplates get a glowing border.", NP("purgeGlow"))
     Checkbox(layout, "Align centered", "The debuff and buff rows above the bar grow from the center to both sides, instead of from the left.", NP("centerAuras"))
     Slider(layout, "Aura spacing", "Space between all aura icons.", 0, 12, 1, NP("spacing"))
