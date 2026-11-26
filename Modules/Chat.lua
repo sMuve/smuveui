@@ -130,29 +130,11 @@ local function CloseExtraWindows()
     return closedAny
 end
 
--- Creates every window the shared layout has beyond the ones this character already has, after
--- CloseExtraWindows above has cleared the optional ones out. FCF_OpenNewWindow is the client's own
--- window-creation function (used by its own chat menu's "New Window"). Confirmed via mUI's source
--- (same file as above) that calling it repeatedly in a plain, synchronous loop works.
--- Returns true if it created at least one window (the confirmation message below needs to know).
-local function CreateMissingWindows(layout)
-    if not FCF_OpenNewWindow then
-        return false
-    end
-    local createdAny = false
-    for id = 1, MaxWindows() do
-        local window = layout.windows and layout.windows[id]
-        local alreadyActive = FCF_IsChatWindowIndexActive and FCF_IsChatWindowIndexActive(id)
-        if window and window.name and window.name ~= "" and not alreadyActive then
-            FCF_OpenNewWindow(window.name, true)
-            createdAny = true
-        end
-    end
-    return createdAny
-end
-
--- Writes the stored layout into this character's chat settings. Returns true when anything changed.
-local function ApplyLayout(layout)
+-- Writes one window's settings into this character's chat settings, at `id`. Returns true when
+-- anything changed. Pulled out of ApplyLayout below so CreateMissingWindows can call it too, with
+-- the window's REAL id - see that function's own comment for why that id can differ from the one
+-- the layout files this window's data under.
+local function ApplyWindowSettings(id, window)
     local changed = false
     local function Call(functionName, ...)
         local fn = _G[functionName]
@@ -162,72 +144,126 @@ local function ApplyLayout(layout)
         end
     end
 
+    local name, fontSize, r, g, b, alpha, shown, locked, docked, uninteractable = GetChatWindowInfo(id)
+    if not (window and name) then
+        return false
+    end
+    if window.name and window.name ~= name then
+        Call("SetChatWindowName", id, window.name)
+    end
+    if window.fontSize and window.fontSize > 0 and window.fontSize ~= fontSize then
+        Call("SetChatWindowSize", id, window.fontSize)
+    end
+    if window.r and (DifferentNumber(window.r, r) or DifferentNumber(window.g, g) or DifferentNumber(window.b, b)) then
+        Call("SetChatWindowColor", id, window.r, window.g, window.b)
+    end
+    if window.alpha and DifferentNumber(window.alpha, alpha) then
+        Call("SetChatWindowAlpha", id, window.alpha)
+    end
+    if id ~= 1 and window.shown ~= (shown and true or false) then
+        Call("SetChatWindowShown", id, window.shown)
+    end
+    if window.locked ~= (locked and true or false) then
+        Call("SetChatWindowLocked", id, window.locked)
+    end
+    if window.uninteractable ~= (uninteractable and true or false) then
+        Call("SetChatWindowUninteractable", id, window.uninteractable)
+    end
+    local wantDocked = window.docked or nil
+    if id ~= 1 and wantDocked ~= (tonumber(docked) or nil) then
+        Call("SetChatWindowDocked", id, wantDocked)
+    end
+    if window.position and window.position.point and GetChatWindowSavedPosition then
+        local point, x, y = GetChatWindowSavedPosition(id)
+        if point ~= window.position.point or DifferentNumber(x, window.position.x) or DifferentNumber(y, window.position.y) then
+            Call("SetChatWindowSavedPosition", id, window.position.point, window.position.x, window.position.y)
+        end
+    end
+    if window.width and window.height and GetChatWindowSavedDimensions then
+        local width, height = GetChatWindowSavedDimensions(id)
+        if DifferentNumber(width, window.width) or DifferentNumber(height, window.height) then
+            Call("SetChatWindowSavedDimensions", id, window.width, window.height)
+        end
+    end
+
+    if id ~= COMBAT_LOG_WINDOW then
+        local wanted, current = ToSet(window.messages), ToSet({ GetChatWindowMessages(id) })
+        for group in pairs(current) do
+            if not wanted[group] then
+                Call("RemoveChatWindowMessages", id, group)
+            end
+        end
+        for group in pairs(wanted) do
+            if not current[group] then
+                Call("AddChatWindowMessages", id, group)
+            end
+        end
+
+        local wantedChannels, currentChannels = ToSet(window.channels), ToSet(GetChannels(id))
+        for channel in pairs(currentChannels) do
+            if not wantedChannels[channel] then
+                Call("RemoveChatWindowChannel", id, channel)
+            end
+        end
+        for channel in pairs(wantedChannels) do
+            if not currentChannels[channel] then
+                Call("AddChatWindowChannel", id, channel)
+            end
+        end
+    end
+
+    return changed
+end
+
+-- Creates every window the shared layout has beyond the ones this character already has, after
+-- CloseExtraWindows above has cleared the optional ones out. FCF_OpenNewWindow is the client's own
+-- window-creation function (used by its own chat menu's "New Window"). Confirmed via mUI's source
+-- (same file as above) that calling it repeatedly in a plain, synchronous loop works.
+--
+-- FCF_OpenNewWindow doesn't let you ask for a specific id - it hands back whichever id is
+-- currently free, lowest first. That id does NOT have to match the one this window's settings are
+-- filed under in the layout: confirmed live as the actual cause of a shared tab coming back
+-- completely blank (no message types checked at all) on a random character, at random - the
+-- sharing character had a gap in their own open windows (e.g. 1, 2, 4, 5 with 3 closed), so the
+-- loop below only had window data to create starting at id 4; the real window that created, FCF
+-- actually handed back id 3, since that was the lowest free slot. ApplyLayout's old by-id-only pass
+-- then looked for settings filed under id 3 - found nothing, since that data was filed under id 4 -
+-- and left the freshly created window completely unconfigured. Fixed by configuring each window
+-- right here, by its real id (frame:GetID()), instead of leaving it to a later pass that assumes
+-- the loop's id and the real id are the same thing.
+-- Returns whether it created at least one window, and the set of real ids it already configured
+-- (so the ApplyLayout call afterward knows to leave those alone).
+local function CreateMissingWindows(layout)
+    if not FCF_OpenNewWindow then
+        return false
+    end
+    local createdAny, handledIds = false, nil
     for id = 1, MaxWindows() do
         local window = layout.windows and layout.windows[id]
-        local name, fontSize, r, g, b, alpha, shown, locked, docked, uninteractable = GetChatWindowInfo(id)
-        if window and name then
-            if window.name and window.name ~= name then
-                Call("SetChatWindowName", id, window.name)
+        local alreadyActive = FCF_IsChatWindowIndexActive and FCF_IsChatWindowIndexActive(id)
+        if window and window.name and window.name ~= "" and not alreadyActive then
+            local frame = FCF_OpenNewWindow(window.name, true)
+            createdAny = true
+            local realId = frame and frame.GetID and frame:GetID()
+            if realId then
+                ApplyWindowSettings(realId, window)
+                handledIds = handledIds or {}
+                handledIds[realId] = true
             end
-            if window.fontSize and window.fontSize > 0 and window.fontSize ~= fontSize then
-                Call("SetChatWindowSize", id, window.fontSize)
-            end
-            if window.r and (DifferentNumber(window.r, r) or DifferentNumber(window.g, g) or DifferentNumber(window.b, b)) then
-                Call("SetChatWindowColor", id, window.r, window.g, window.b)
-            end
-            if window.alpha and DifferentNumber(window.alpha, alpha) then
-                Call("SetChatWindowAlpha", id, window.alpha)
-            end
-            if id ~= 1 and window.shown ~= (shown and true or false) then
-                Call("SetChatWindowShown", id, window.shown)
-            end
-            if window.locked ~= (locked and true or false) then
-                Call("SetChatWindowLocked", id, window.locked)
-            end
-            if window.uninteractable ~= (uninteractable and true or false) then
-                Call("SetChatWindowUninteractable", id, window.uninteractable)
-            end
-            local wantDocked = window.docked or nil
-            if id ~= 1 and wantDocked ~= (tonumber(docked) or nil) then
-                Call("SetChatWindowDocked", id, wantDocked)
-            end
-            if window.position and window.position.point and GetChatWindowSavedPosition then
-                local point, x, y = GetChatWindowSavedPosition(id)
-                if point ~= window.position.point or DifferentNumber(x, window.position.x) or DifferentNumber(y, window.position.y) then
-                    Call("SetChatWindowSavedPosition", id, window.position.point, window.position.x, window.position.y)
-                end
-            end
-            if window.width and window.height and GetChatWindowSavedDimensions then
-                local width, height = GetChatWindowSavedDimensions(id)
-                if DifferentNumber(width, window.width) or DifferentNumber(height, window.height) then
-                    Call("SetChatWindowSavedDimensions", id, window.width, window.height)
-                end
-            end
+        end
+    end
+    return createdAny, handledIds
+end
 
-            if id ~= COMBAT_LOG_WINDOW then
-                local wanted, current = ToSet(window.messages), ToSet({ GetChatWindowMessages(id) })
-                for group in pairs(current) do
-                    if not wanted[group] then
-                        Call("RemoveChatWindowMessages", id, group)
-                    end
-                end
-                for group in pairs(wanted) do
-                    if not current[group] then
-                        Call("AddChatWindowMessages", id, group)
-                    end
-                end
-
-                local wantedChannels, currentChannels = ToSet(window.channels), ToSet(GetChannels(id))
-                for channel in pairs(currentChannels) do
-                    if not wantedChannels[channel] then
-                        Call("RemoveChatWindowChannel", id, channel)
-                    end
-                end
-                for channel in pairs(wantedChannels) do
-                    if not currentChannels[channel] then
-                        Call("AddChatWindowChannel", id, channel)
-                    end
-                end
+-- Writes the stored layout into this character's chat settings, skipping any id CreateMissingWindows
+-- already configured directly above. Returns true when anything changed.
+local function ApplyLayout(layout, skipIds)
+    local changed = false
+    for id = 1, MaxWindows() do
+        if not (skipIds and skipIds[id]) then
+            local window = layout.windows and layout.windows[id]
+            if ApplyWindowSettings(id, window) then
+                changed = true
             end
         end
     end
@@ -619,12 +655,12 @@ function M:Init()
                     geterrorhandler()(closedAny)
                     closedAny = false
                 end
-                local okCreate, createdAny = pcall(CreateMissingWindows, layout)
+                local okCreate, createdAny, handledIds = pcall(CreateMissingWindows, layout)
                 if not okCreate then
                     geterrorhandler()(createdAny)
-                    createdAny = false
+                    createdAny, handledIds = false, nil
                 end
-                local ok, changed = pcall(ApplyLayout, layout)
+                local ok, changed = pcall(ApplyLayout, layout, handledIds)
                 if not ok then
                     geterrorhandler()(changed)
                 else
