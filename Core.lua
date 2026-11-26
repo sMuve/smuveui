@@ -60,6 +60,13 @@ S.defaults = {
         combatIndicator = false,  -- +COMBAT/-COMBAT flashed center screen entering/leaving combat
         friendFactionColors = true, -- tints Battle.net friend rows blue/red by their character's faction
         friendGameMode = true,      -- "[PvP]"/"[Normal]" after a Battle.net friend's zone in the friends list
+        tooltipGuild = true,     -- the guild (and rank) line on a player's tooltip
+        tooltipLevelLine = true, -- the level/race line
+        tooltipClass = true,     -- a player's class, or an NPC's creature type, line
+        tooltipFaction = true,   -- the "Alliance"/"Horde" line on a player's tooltip
+        tooltipThreat = true,    -- the threat percentage line shown on an enemy you're in combat with
+        tooltipRecentAllies = true, -- the "Recent Allies" line on a player you've recently grouped with
+        tooltipClassification = true, -- the "(Elite)"/"(Rare)"/"(Rare Elite)"/"(Boss)" suffix on the level line
     },
     actionbars = {
         rangeIndicator = true,

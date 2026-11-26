@@ -1180,6 +1180,58 @@ function S:Dump()
         end
     end
 
+    -- What a unit's tooltip actually contains, line by line - researched for a "QoL -> Tooltip"
+    -- option category letting each piece of info be turned off individually. GameTooltip:SetUnit
+    -- is called directly here rather than relying on the player actually hovering something when
+    -- they run the dump: hovering requires the mouse to stay put, but running a slash command
+    -- needs it to move to the chat box first, which would hide the tooltip before this ever ran.
+    debug.tooltip = {}
+    local lineTypeNames = {}
+    if Enum and Enum.TooltipDataLineType then
+        for key, value in pairs(Enum.TooltipDataLineType) do
+            if type(value) == "number" then
+                lineTypeNames[value] = key
+            end
+        end
+    end
+    local function DumpTooltipFor(unit)
+        if not UnitExists(unit) then
+            return
+        end
+        local lines = {}
+        GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+        GameTooltip:SetUnit(unit)
+        for i = 1, GameTooltip:NumLines() do
+            local left = _G["GameTooltipTextLeft" .. i]
+            local right = _G["GameTooltipTextRight" .. i]
+            table.insert(lines, string.format("line %d: left=%s right=%s", i,
+                tostring(left and Safe(left:GetText())), tostring(right and Safe(right:GetText()))))
+        end
+        if C_TooltipInfo and C_TooltipInfo.GetUnit then
+            local ok, info = pcall(C_TooltipInfo.GetUnit, unit)
+            if ok and info and info.lines then
+                for i, line in ipairs(info.lines) do
+                    table.insert(lines, string.format("data %d: type=%s left=%s right=%s", i,
+                        tostring(lineTypeNames[line.type] or line.type),
+                        tostring(Safe(line.leftText)), tostring(Safe(line.rightText))))
+                end
+            end
+        end
+        GameTooltip:Hide()
+        debug.tooltip[unit] = lines
+    end
+    DumpTooltipFor("target")
+    DumpTooltipFor("focus")
+    DumpTooltipFor("mouseover")
+    DumpTooltipFor("player")
+    debug.tooltipLineTypes = {}
+    if Enum and Enum.TooltipDataLineType then
+        for key in pairs(Enum.TooltipDataLineType) do
+            table.insert(debug.tooltipLineTypes, key)
+        end
+        table.sort(debug.tooltipLineTypes)
+    end
+
     -- Modules that are switched off.
     debug.disabledModules = S.db.disabledModules
 

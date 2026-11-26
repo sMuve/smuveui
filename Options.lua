@@ -611,7 +611,33 @@ CATEGORIES[8] = { key = "qol_chat_social", title = "Chat & Social", indent = tru
     JoinColumns(layout, columns)
 end }
 
-CATEGORIES[9] = { key = "actionbars", title = "Action Bars", build = function(layout)
+CATEGORIES[9] = { key = "qol_tooltip", title = "Tooltip", indent = true, build = function(layout)
+    Header(layout, "Tooltip")
+    Note(layout, "Hides pieces of a unit's tooltip. For the tooltip's look (dark mode, class colored names), see the separate Tooltip page.")
+    Checkbox(layout, "Guild name",
+        "The guild (and rank) line on a player's tooltip.",
+        Setting("qol", "tooltipGuild"))
+    Checkbox(layout, "Level and race",
+        "The level and race line.",
+        Setting("qol", "tooltipLevelLine"))
+    Checkbox(layout, "Class / creature type",
+        "A player's class, or an NPC's creature type (Beast, Humanoid, ...).",
+        Setting("qol", "tooltipClass"))
+    Checkbox(layout, "Faction",
+        "The \"Alliance\"/\"Horde\" line on a player's tooltip.",
+        Setting("qol", "tooltipFaction"))
+    Checkbox(layout, "Threat percentage",
+        "The threat percentage line shown on an enemy you're in combat with.",
+        Setting("qol", "tooltipThreat"))
+    Checkbox(layout, "Recent allies",
+        "The \"Recent Allies\" line shown on a player you've recently been grouped with.",
+        Setting("qol", "tooltipRecentAllies"))
+    Checkbox(layout, "NPC classification",
+        "The \"(Elite)\"/\"(Rare)\"/\"(Rare Elite)\"/\"(Boss)\" tag after an NPC's level.",
+        Setting("qol", "tooltipClassification"))
+end }
+
+CATEGORIES[10] = { key = "actionbars", title = "Action Bars", build = function(layout)
     Header(layout, "Action Bars")
     Checkbox(layout, "Range indicator",
         "Colors the whole button icon: red when out of range, blue when you lack the mana, gray when unusable.",
@@ -675,7 +701,7 @@ local function AuraSettings(layout, unit, label)
     Slider(layout, "Rows", "How many debuff rows there can be.", 1, 6, 1, UA("debuffRows"))
 end
 
-CATEGORIES[10] = { key = "unitframes", title = "Unit Frames", build = function(layout)
+CATEGORIES[11] = { key = "unitframes", title = "Unit Frames", build = function(layout)
     Header(layout, "Unit Frames")
     Checkbox(layout, "Class colored health bars",
         "Player, target, focus, target of target and nameplate health bars use the class color of players. NPCs keep their usual colors.",
@@ -718,7 +744,7 @@ CATEGORIES[10] = { key = "unitframes", title = "Unit Frames", build = function(l
     Slider(layout, "Duration size", "Text size of the remaining time.", 6, 30, 1, Setting("bigDebuffs", "durationSize", "BigDebuffs"))
 end }
 
-CATEGORIES[11] = { key = "player", title = "Player", indent = true, build = function(layout)
+CATEGORIES[12] = { key = "player", title = "Player", indent = true, build = function(layout)
     Header(layout, "Auras")
     if not S.modules.Auras:IsSupported() then
         Note(layout, "This client doesn't offer the aura containers the Smuve style needs, so only the Dark style is available.")
@@ -770,15 +796,15 @@ CATEGORIES[11] = { key = "player", title = "Player", indent = true, build = func
     table.insert(refreshers, UpdateAuraRows)
 end }
 
-CATEGORIES[12] = { key = "target", title = "Target", indent = true, build = function(layout)
+CATEGORIES[13] = { key = "target", title = "Target", indent = true, build = function(layout)
     AuraSettings(layout, "target", "target")
 end }
 
-CATEGORIES[13] = { key = "focus", title = "Focus", indent = true, build = function(layout)
+CATEGORIES[14] = { key = "focus", title = "Focus", indent = true, build = function(layout)
     AuraSettings(layout, "focus", "focus")
 end }
 
-CATEGORIES[14] = { key = "tooltip", title = "Tooltip", build = function(layout)
+CATEGORIES[15] = { key = "tooltip", title = "Tooltip", build = function(layout)
     Header(layout, "Tooltip")
     Checkbox(layout, "Dark tooltips",
         "Tooltips get a near black background and a darkened border.",
@@ -791,7 +817,7 @@ CATEGORIES[14] = { key = "tooltip", title = "Tooltip", build = function(layout)
         Setting("tooltip", "classColorClass"))
 end }
 
-CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(layout)
+CATEGORIES[16] = { key = "nameplates", title = "Nameplates", build = function(layout)
     local function NP(key)
         return Setting("nameplates", key, "Nameplates")
     end
@@ -884,7 +910,7 @@ CATEGORIES[15] = { key = "nameplates", title = "Nameplates", build = function(la
     Slider(layout, "Y offset", "Moves them down (negative) or up.", -40, 40, 1, NP("ccY"))
 end }
 
-CATEGORIES[16] = { key = "raidFrames", title = "Raid & Party Frames", build = function(layout)
+CATEGORIES[17] = { key = "raidFrames", title = "Raid & Party Frames", build = function(layout)
     local function RF(key)
         return Setting("raidFrames", key, "RaidFrames")
     end
@@ -966,7 +992,7 @@ CATEGORIES[16] = { key = "raidFrames", title = "Raid & Party Frames", build = fu
     Checkbox(layout, "Forward mouse buttons 4/5", "Forwards mouse buttons 4 and 5 clicked on a member frame to whatever action is currently bound to them (mouseover macros, multibars).", RF("mouseButtonForwarding"))
 end }
 
-CATEGORIES[17] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
+CATEGORIES[18] = { key = "minimap", title = "Map & Minimap", build = function(layout, page)
     Header(layout, "Minimap")
     Checkbox(layout, "Hide addon buttons",
         "Addon buttons around the minimap and the client's addon compartment are hidden; right-click the map to open them all in one box.",
@@ -1016,7 +1042,7 @@ StaticPopupDialogs["SMUVEUI_MODULE_RELOAD"] = {
     preferredIndex = 3,
 }
 
-CATEGORIES[18] = { key = "modules", title = "Modules", build = function(layout)
+CATEGORIES[19] = { key = "modules", title = "Modules", build = function(layout)
     Header(layout, "Modules")
     Note(layout, "A module that is switched off doesn't run at all. Changes take effect after a reload.")
     for _, module in ipairs(S.moduleOrder) do

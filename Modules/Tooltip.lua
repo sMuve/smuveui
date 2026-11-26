@@ -201,6 +201,139 @@ local function SafeColorName(tooltip)
     S.SafeCall(ColorName, tooltip)
 end
 
+-- Info toggles (QoL -> Tooltip) ---------------------------------------------------------------
+-- Each of these removes one piece of info from a unit's tooltip, by editing its structured line
+-- data (TooltipDataProcessor.AddTooltipPreCall) before the client ever turns it into a FontString
+-- - confirmed against Blizzard's own TooltipDataHandler.lua source (ProcessLines reads the very
+-- same tooltipData.lines table a PreCall callback already had a chance to edit) that this is what
+-- actually removes a line cleanly, with no leftover blank gap - unlike hiding an already-built
+-- line's text after the fact.
+--
+-- Confirmed live via /smuve dump (hovering a guilded player and a plain hostile NPC, reading
+-- C_TooltipInfo.GetUnit's own data): every one of these lines comes back tagged type=None on this
+-- client - there's no finer-grained type to filter on - so each is told apart from the others by
+-- its actual text value instead (the guild name from GetGuildInfo, the class from UnitClass, the
+-- creature type from UnitCreatureType, the faction from UnitFactionGroup). None of those four ever
+-- collide with each other for a real unit, so matching by value is reliable. The level/race line
+-- has no single API call that returns its exact text, so it's found by elimination instead:
+-- whatever None-type line is left over once the other three are accounted for. Quest-related lines
+-- (type=QuestTitle/QuestPlayer/QuestObjective, confirmed in the same dump) are never type=None, so
+-- they're never touched here.
+--
+-- The threat percentage line (shown while in combat with the unit) is simpler: confirmed in a
+-- later dump (targeting an enemy in combat) as its own dedicated type, UnitThreat - matched
+-- directly, no value-guessing needed. Its line also sits at a different position in data.lines
+-- than where it actually renders (quest lines come first in the array but render after it) -
+-- harmless here since removal is by type, not position, so where it sits doesn't matter.
+--
+-- "Recent Allies" (shown on a player you've recently grouped with) is back to type=None, but its
+-- text carries a distinctive atlas icon tag (|A:friendslist-recentallies-yellow:...|a, confirmed
+-- live) ahead of the actual words - matched on that atlas name rather than the translated text, so
+-- this doesn't need its own API lookup and stays correct regardless of client language.
+--
+-- An elite/rare/boss NPC's classification isn't its own line either: confirmed live as a suffix
+-- baked directly onto the end of the level line's text ("Level 29 (Elite)"). UnitClassification(unit)
+-- gives the same information as a stable keyword ("elite", "rare", "rareelite", "worldboss") rather
+-- than the rendered label, so the expected suffix is built from that and only stripped off the end
+-- of the text if it's actually there - never a blind guess at what the line contains.
+local function SafeValue(getter, ...)
+    local ok, value = pcall(getter, ...)
+    if not ok or S.IsSecret(value) or type(value) ~= "string" then
+        return nil
+    end
+    return value
+end
+
+local function GetFactionName(unit)
+    return (select(2, UnitFactionGroup(unit)))
+end
+
+local function IsRecentAllies(text)
+    return text:find("friendslist-recentallies", 1, true) ~= nil
+end
+
+local CLASSIFICATION_SUFFIXES = {
+    elite = " (Elite)",
+    rare = " (Rare)",
+    rareelite = " (Rare Elite)",
+    worldboss = " (Boss)",
+}
+
+local function StripClassification(text, unit)
+    local classification = SafeValue(UnitClassification, unit)
+    local suffix = classification and CLASSIFICATION_SUFFIXES[classification]
+    local pos = suffix and text:find(suffix, 1, true)
+    if pos then
+        return text:sub(1, pos - 1)
+    end
+    return text
+end
+
+local function RemoveUnitLines(tooltip, data)
+    local unit = select(2, tooltip:GetUnit())
+    if not unit or S.IsSecret(unit) or not data or not data.lines then
+        return
+    end
+    local db = S.db.qol
+    local noneType = Enum.TooltipDataLineType.None
+
+    -- Computed regardless of each one's own toggle - the level/race line below needs to recognize
+    -- and skip these even while they're being kept, not just while they're being removed.
+    -- Confirmed live as a real bug otherwise: with "Level and race" off but "Guild name" on, the
+    -- old version found the guild line first (it's the one still sitting in that type=None slot)
+    -- and removed that instead, leaving the level line untouched.
+    local guildName = SafeValue(GetGuildInfo, unit)
+    local classOrType = SafeValue(UnitClass, unit) or SafeValue(UnitCreatureType, unit)
+    local factionName = SafeValue(GetFactionName, unit)
+
+    local function IsKnownOtherLine(text)
+        return (guildName and text == guildName) or (classOrType and text == classOrType)
+            or (factionName and text == factionName) or IsRecentAllies(text)
+    end
+
+    for i = #data.lines, 2, -1 do
+        local line = data.lines[i]
+        if line then
+            if line.type == noneType then
+                local text = not S.IsSecret(line.leftText) and line.leftText
+                if type(text) == "string" then
+                    if (guildName and text == guildName and not db.tooltipGuild)
+                        or (classOrType and text == classOrType and not db.tooltipClass)
+                        or (factionName and text == factionName and not db.tooltipFaction)
+                        or (not db.tooltipRecentAllies and IsRecentAllies(text)) then
+                        table.remove(data.lines, i)
+                    end
+                end
+            elseif not db.tooltipThreat and line.type == Enum.TooltipDataLineType.UnitThreat then
+                table.remove(data.lines, i)
+            end
+        end
+    end
+
+    if not db.tooltipLevelLine or not db.tooltipClassification then
+        for i = 2, #data.lines do
+            local line = data.lines[i]
+            if line and line.type == noneType then
+                local text = not S.IsSecret(line.leftText) and line.leftText
+                if type(text) == "string" and not IsKnownOtherLine(text) then
+                    if not db.tooltipLevelLine then
+                        table.remove(data.lines, i)
+                    else
+                        line.leftText = StripClassification(text, unit)
+                    end
+                    break
+                elseif type(text) ~= "string" then
+                    break
+                end
+            end
+        end
+    end
+end
+
+local function SafeRemoveUnitLines(tooltip, data)
+    S.SafeCall(RemoveUnitLines, tooltip, data)
+end
+
 -- Module -------------------------------------------------------------------------------------------
 
 function M:Init()
@@ -208,6 +341,9 @@ function M:Init()
         TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, SafeColorName)
     elseif GameTooltip:HasScript("OnTooltipSetUnit") then
         GameTooltip:HookScript("OnTooltipSetUnit", SafeColorName)
+    end
+    if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPreCall and Enum and Enum.TooltipDataType and Enum.TooltipDataLineType then
+        TooltipDataProcessor.AddTooltipPreCall(Enum.TooltipDataType.Unit, SafeRemoveUnitLines)
     end
     S:On("PLAYER_ENTERING_WORLD", function()
         M:StyleTooltips()
