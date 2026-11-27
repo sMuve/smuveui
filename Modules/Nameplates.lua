@@ -883,9 +883,61 @@ local function PlateReactionColor(unit)
     return (FACTION_BAR_COLORS and FACTION_BAR_COLORS[reaction]) or REACTION_FALLBACK[reaction]
 end
 
+-- Distinct from REACTION_FALLBACK's red/orange/yellow/green and from SPECIAL_GRAYS, so it reads
+-- as its own "you're fine" signal rather than a shade of an existing reaction color.
+local AGGRO_TINT_COLOR = { r = 0.3, g = 0.7, b = 1.0 }
+
+local function PlayerRole()
+    local role = UnitGroupRolesAssigned("player")
+    if S.IsSecret(role) then
+        return nil
+    end
+    return role
+end
+
+-- GetSpecializationRole(GetSpecialization()) is not used here - confirmed via EllesmereUI's own
+-- Forever-specific fallback path that WoW Forever doesn't populate meaningful spec-role data, so
+-- UnitGroupRolesAssigned is the only reliable source on this client (see specs\015-nameplate-
+-- aggro-tint\research.md).
+local function IsAttackingPlayer(unit)
+    local isTanking = UnitDetailedThreatSituation("player", unit)
+    if S.IsSecret(isTanking) then
+        return nil
+    end
+    return isTanking
+end
+
+local function AggroTintColor(unit)
+    if not DB().aggroTint then
+        return nil
+    end
+    local exists = UnitExists(unit)
+    if S.IsSecret(exists) or not exists then
+        return nil
+    end
+    local isPlayer = UnitIsPlayer(unit)
+    if S.IsSecret(isPlayer) or isPlayer then
+        return nil
+    end
+    local reaction = UnitReaction(unit, "player")
+    if not reaction or S.IsSecret(reaction) or reaction > 3 then
+        return nil
+    end
+    local role = PlayerRole()
+    local attacking = IsAttackingPlayer(unit)
+    if role == nil or attacking == nil then
+        return nil
+    end
+    if role == "TANK" then
+        return attacking and AGGRO_TINT_COLOR or nil
+    end
+    -- Healer, Damage, and an undetermined role all share the same "avoid aggro" rule.
+    return (not attacking) and AGGRO_TINT_COLOR or nil
+end
+
 local function PlateBarColor(unit)
     local appearance = S.db.appearance
-    return (appearance.classColors and PlateClassColor(unit)) or (appearance.reactionColors and PlateReactionColor(unit)) or nil
+    return AggroTintColor(unit) or (appearance.classColors and PlateClassColor(unit)) or (appearance.reactionColors and PlateReactionColor(unit)) or nil
 end
 
 -- Tapped by another player (you can't loot/get credit), dead, or disconnected: the client grays
@@ -1921,6 +1973,22 @@ function M:Init()
             SafeBind(unit)
         end
     end)
+    -- Aggro tint depends on threat/role, neither of which reliably makes the client re-call
+    -- SetStatusBarColor on its own, unlike a health or reaction change - so these two repaint
+    -- every bound plate directly instead of waiting on that hook.
+    local function RepaintVisiblePlates()
+        if not DB().aggroTint then
+            return
+        end
+        for _, set in pairs(sets) do
+            local healthBar = set.frame and set.frame.HealthBarsContainer and set.frame.HealthBarsContainer.healthBar
+            if healthBar and Accessible(healthBar) then
+                pcall(PaintBarColor, healthBar)
+            end
+        end
+    end
+    S:On("UNIT_THREAT_SITUATION_UPDATE", RepaintVisiblePlates)
+    S:On("PLAYER_ROLES_ASSIGNED", RepaintVisiblePlates)
     -- New spells (a purge learned) change which buffs glow: buttons are rebuilt.
     for _, event in ipairs({ "SPELLS_CHANGED", "UNIT_PET" }) do
         S:On(event, function()

@@ -122,6 +122,7 @@ S.defaults = {
         nameY = 2,
         onlyMyDebuffs = true,
         purgeGlow = true,
+        aggroTint = false, -- light blue "you're fine" tint on hostile mobs, by role vs. who they're attacking
         spacing = 3,            -- between all aura icons
         scale = 1,              -- whole nameplate
         width = 200,            -- nameplate width

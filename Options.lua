@@ -835,6 +835,7 @@ CATEGORIES[16] = { key = "nameplates", title = "Nameplates", build = function(la
     Checkbox(layout, "Only my debuffs", "The debuff row shows only debuffs you applied. Crowd control is always shown.", NP("onlyMyDebuffs"))
     Checkbox(layout, "Show buffs", "The \"remaining buffs\" row above the debuffs. Important buffs and crowd control are unaffected.", NP("showBuffs"))
     Checkbox(layout, "Glow on purgeable buffs", "Buffs you can remove (Purge, Dispel Magic, Tranquilizing Shot, ...) on enemy nameplates get a glowing border.", NP("purgeGlow"))
+    Checkbox(layout, "Aggro tint", "A hostile mob's health bar turns light blue to mean \"you're fine\": as Tank, while it's attacking you; as Healer or Damage, while it isn't. Helps with aggro management. Works even with reaction colors off, and never overrides a tapped/dead/offline mob's grey bar.", NP("aggroTint"))
     Checkbox(layout, "Align centered", "The debuff and buff rows above the bar grow from the center to both sides, instead of from the left.", NP("centerAuras"))
     Slider(layout, "Aura spacing", "Space between all aura icons.", 0, 12, 1, NP("spacing"))
 
