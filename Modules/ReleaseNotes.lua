@@ -7,6 +7,9 @@ local M = S:NewModule("ReleaseNotes")
 -- specs/012-release-notes-popup/research.md §1. Newest first, matching CHANGELOG.md's own layout -
 -- never reorder independently of a new release (research.md §3 relies on this order).
 local ENTRIES = {
+    { version = "0.12.2", notes = {
+        "Fixed \"Name only\" mode not applying to neutral units that can't be attacked.",
+    } },
     { version = "0.12.1", notes = {
         "Fixed the square minimap still showing the round day/night indicator at night.",
     } },

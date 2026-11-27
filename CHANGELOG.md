@@ -2,6 +2,9 @@
 
 All notable changes to this addon are documented here.
 
+## 0.12.2 - 2026-11-27
+- Fixed "Name only" mode not applying to neutral units that can't be attacked (like training dummies) - they now get the same simplified nameplate as a friendly NPC instead of showing the name inside the health bar.
+
 ## 0.12.1 - 2026-11-27
 - Fixed the square minimap still showing the round day/night indicator at night.
 
