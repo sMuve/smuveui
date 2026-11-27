@@ -576,6 +576,27 @@ local NAME_ONLY_TOP_OFFSET = -12
 local placingNPCName = false
 local npcNamePositionHooked = setmetatable({}, { __mode = "k" })
 
+-- :IsFriend() only recognizes reaction >= 5 (green) - a permanently neutral, unattackable unit
+-- (reaction 4, yellow - e.g. a training dummy) never qualifies, even though it behaves just like a
+-- friendly NPC and should get the same name-only treatment. Confirmed live via /smuve dump on a
+-- Theramore Combat Dummy: reaction=4 canAttack=false, and it kept its full health-bar nameplate.
+-- "can't attack it" is the real signal here, not strict friendliness - this still excludes an
+-- aggressive neutral mob (canAttack=true), which keeps its full nameplate as a hostile one would.
+local function IsNonHostileNPC(frame)
+    if frame:IsFriend() then
+        return true
+    end
+    local unit = frame.unit
+    if not unit then
+        return false
+    end
+    local canAttack = UnitCanAttack("player", unit)
+    if S.IsSecret(canAttack) then
+        return false
+    end
+    return not canAttack
+end
+
 local function ApplyNPCNameOnlyPosition(frame)
     local name = frame.name
     if not name or not Accessible(name) or placingNPCName then
@@ -586,7 +607,7 @@ local function ApplyNPCNameOnlyPosition(frame)
     -- sufficiently restricted plate) can't leave it stuck true forever, which would otherwise
     -- silently disable this for every other nameplate for the rest of the session.
     pcall(function()
-        local show = frame:IsFriend() and not frame:IsPlayer() and DB().friendlyNameOnly
+        local show = IsNonHostileNPC(frame) and not frame:IsPlayer() and DB().friendlyNameOnly
         if not show then
             return
         end
@@ -1603,7 +1624,7 @@ local function ApplyNPCNameOnlyAlpha(frame)
     if not Accessible(frame) then
         return
     end
-    local hide = frame:IsFriend() and not frame:IsPlayer() and DB().friendlyNameOnly
+    local hide = IsNonHostileNPC(frame) and not frame:IsPlayer() and DB().friendlyNameOnly
     if not hide and not npcNameOnlyFaded[frame] then
         return
     end
@@ -1680,7 +1701,7 @@ local function ApplyNPCDescription(frame)
     if not Accessible(frame) or not frame.name or not Accessible(frame.name) then
         return
     end
-    local show = frame:IsFriend() and not frame:IsPlayer() and DB().friendlyNameOnly
+    local show = IsNonHostileNPC(frame) and not frame:IsPlayer() and DB().friendlyNameOnly
     local description = show and GetNPCDescription(frame.unit)
     if not description or description == "" then
         if frame.smuveNPCDescription then
